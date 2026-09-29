@@ -35,6 +35,8 @@ def install(conn):
         CREATE TABLE IF NOT EXISTS sync_marker (origin TEXT PRIMARY KEY, cseq INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS sync_flags (tbl TEXT NOT NULL, rid TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT,
             PRIMARY KEY (tbl, rid, kind));
+        CREATE TABLE IF NOT EXISTS sync_dropped (tbl TEXT NOT NULL, rid TEXT NOT NULL, fld TEXT NOT NULL, origin TEXT NOT NULL,
+            cseq INTEGER NOT NULL, PRIMARY KEY (tbl, rid, fld, origin, cseq));
     ''')
 
 
@@ -57,6 +59,10 @@ class Entry:
         return (self.prio, self.hlc, self.origin, self.cseq)
 
 
+def _ord_value(v):
+    return (0, v, '') if isinstance(v, (int, float)) and not isinstance(v, bool) else (1, 0, str(v))
+
+
 def _cmp_value(v):
     return (v is not None, '' if v is None else str(v))
 
@@ -75,8 +81,26 @@ class Registers:
             return cur.get('deps') or {}
         return self._deps_of(origin, cseq)
 
-    def write(self, tbl, rid, fld, env, prio, hlc, value):
+    def write(self, tbl, rid, fld, env, prio, hlc, value, once=False):
+        """once=True (write-once fields of immutable records, e.g. issued documents): only the earliest write by
+        (hlc, origin, cseq) is ever kept, whatever the order of arrival; every other write is remembered as dropped so
+        that the row is flagged 'edited-after-issue' identically on every PC."""
         origin, cseq, deps = env['origin'], env['cseq'], env.get('deps') or {}
+        if once:
+            rows = self.conn.execute('SELECT origin, cseq, hlc FROM sync_field WHERE tbl=? AND rid=? AND fld=?', (tbl, rid, fld)).fetchall()
+            me = (hlc, origin, cseq)
+            if any((o, c) == (origin, cseq) for o, c, _ in rows):
+                return
+            if rows:
+                first = min((h, o, c) for o, c, h in rows)
+                if first < me:  # an earlier write already holds the field: this one is dropped
+                    self.conn.execute('INSERT OR IGNORE INTO sync_dropped VALUES (?,?,?,?,?)', (tbl, rid, fld, origin, cseq))
+                    return
+                for o, c, _ in rows:  # this write is earlier than the stored one: it takes over, the stored one is dropped
+                    self.conn.execute('DELETE FROM sync_field WHERE tbl=? AND rid=? AND fld=? AND origin=? AND cseq=?', (tbl, rid, fld, o, c))
+                    self.conn.execute('INSERT OR IGNORE INTO sync_dropped VALUES (?,?,?,?,?)', (tbl, rid, fld, o, c))
+            self.conn.execute('INSERT INTO sync_field VALUES (?,?,?,?,?,?,?,?)', (tbl, rid, fld, origin, cseq, prio, hlc, canonical(value)))
+            return
         for o, c in self.conn.execute('SELECT origin, cseq FROM sync_field WHERE tbl=? AND rid=? AND fld=?', (tbl, rid, fld)).fetchall():
             if (o == origin and c == cseq) or dominates(deps, origin, cseq, o, c):
                 self.conn.execute('DELETE FROM sync_field WHERE tbl=? AND rid=? AND fld=? AND origin=? AND cseq=?', (tbl, rid, fld, o, c))
@@ -108,6 +132,11 @@ class Registers:
                 w = max(es, key=lambda e: (e.prio, bool(e.value and e.value[0]), e.hlc, e.origin, e.cseq))
             elif rule == 'max':
                 w = max(es, key=lambda e: (e.prio, _cmp_value(e.value), e.hlc, e.origin, e.cseq))
+            elif rule == 'min':  # the smallest value wins (earliest date, lowest number); empty values only if all are empty
+                top = max(e.prio for e in es)
+                best = [e for e in es if e.prio == top]
+                best = [e for e in best if e.value is not None] or best
+                w = min(best, key=lambda e: (_ord_value(e.value), e.hlc, e.origin, e.cseq))
             elif rule.startswith('rank:'):
                 order = rule[5:].split(',')
                 w = max(es, key=lambda e: (e.prio, order.index(e.value) if e.value in order else -1, e.hlc, e.origin, e.cseq))
@@ -132,7 +161,7 @@ class Registers:
                     return False
         return True
 
-    def flags(self, groups, win, is_deleted, counters=None):
+    def flags(self, groups, win, is_deleted, counters=None, tbl_rid=None):
         """Things a person should look at, derived from the converged state (identical on every PC)."""
         out = {}
         conflicts = {}
@@ -145,6 +174,9 @@ class Registers:
                                   for e in sorted(es, key=Entry.lww, reverse=True)]
         if conflicts:
             out['conflict'] = conflicts
+        dropped = self.conn.execute('SELECT fld, origin, cseq FROM sync_dropped WHERE tbl=? AND rid=? ORDER BY fld, origin, cseq', (tbl_rid[0], tbl_rid[1])).fetchall() if tbl_rid else []
+        if dropped:
+            out['edited-after-issue'] = [[r[0], r[1], r[2]] for r in dropped]
         d = win.get('_del')
         if is_deleted and d:
             edits = sorted({(e.origin, e.cseq) for fld, es in groups.items() if fld not in META for e in es if self.concurrent(e, d)})
@@ -216,9 +248,10 @@ class BusinessFolder:
         sets = op.get('s') or {}
         if not isinstance(sets, dict):
             raise ValueError('bad field list')
+        once = bool(spec.get('immutable'))
         for js, v in sorted(sets.items()):
             if js in names and js not in spec['counters']:
-                self.reg.write(tbl, rid, js, env, prio, hlc, v)
+                self.reg.write(tbl, rid, js, env, prio, hlc, v, once=once)
         boot = env['kind'] == 'bootstrap'  # keeps the original created / changed / deleted stamps of upgraded rows
         if op.get('x') is not None:
             stamp = op['di'] if boot and isinstance(op.get('di'), list) else [env['ts'], env['actor'], env['id']]
@@ -276,4 +309,4 @@ class BusinessFolder:
             for js, col, _ in spec['fields']:
                 if js in spec['counters']:
                     counters[js] = row[col] if row else None
-        return self.reg.set_flags(tbl, rid, self.reg.flags(groups, win, self.reg.deleted(groups, win), counters))
+        return self.reg.set_flags(tbl, rid, self.reg.flags(groups, win, self.reg.deleted(groups, win), counters, (tbl, rid)))

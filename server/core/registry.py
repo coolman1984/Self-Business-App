@@ -34,6 +34,7 @@ class Entity:
     scope_via: Optional[tuple] = None             # (fk js key, parent entity name): the scope of the parent record
     dup_keys: Optional[list] = None               # js keys; two live records with equal values are a possible duplicate
     file_fields: tuple = ()                       # js keys holding '/files/...' references
+    immutable: bool = False                       # write-once record (issued documents): the earliest write wins, edits are refused
     index: tuple = ()                             # extra columns to index
     name_fields: tuple = ('name', 'title', 'caption')  # what to call a record in messages
 
@@ -47,7 +48,7 @@ def register(entity):
     COUNTERS[entity.name] = set(entity.counters)
     RESOLVERS[entity.name] = dict(entity.resolvers)
     SPECS[entity.name] = {'table': entity.table, 'fields': [(js, col, kind) for js, col, kind, _ in entity.fields],
-                          'counters': COUNTERS[entity.name], 'resolvers': RESOLVERS[entity.name]}
+                          'counters': COUNTERS[entity.name], 'resolvers': RESOLVERS[entity.name], 'immutable': entity.immutable}
     REPLICATED.add(entity.name)
     META[entity.name] = entity
     return entity
