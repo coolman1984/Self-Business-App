@@ -1,8 +1,9 @@
-"""Users, passwords, sessions and permissions for the Break Area Management System.
+"""Users, passwords, sessions and permissions (harvested from BAMS, permissions now come from permissions.py).
 
 Security design (following the OWASP Authentication, Password Storage and Session
 Management cheat sheets):
-  * Passwords are never stored - only a salted PBKDF2-SHA256 hash (600,000 rounds).
+  * Passwords are never stored - only a salted scrypt hash (N=2^17, r=8, p=1, OWASP). Hashes made by BAMS-style PBKDF2-SHA256
+    (600,000 rounds) are still accepted and are replaced by a scrypt hash at the next login.
   * A login session is a random 256-bit token in an HttpOnly, SameSite=Strict cookie;
     only its SHA-256 hash is kept on the server. Sessions end after a period of
     inactivity and after a maximum lifetime, on logout, on password change and when
@@ -44,104 +45,15 @@ import ed25519
 import replica
 from journal import PRIORITY, password_proof_message
 
-# (group, [(permission, label)]) - the order is the order shown on the user screen
-ADMIN_GROUP = 'Administrator rights - only for administrators'
-PERMISSIONS = [
-    ('Pages - what the person can open', [
-        ('dashboard.view', 'Dashboard'),
-        ('areas.view', 'Break Areas list and profiles'),
-        ('equipment.view', 'Furniture & Equipment page'),
-        ('transactions.view', 'Transactions page'),
-        ('maintenance.view', 'Inspection & Maintenance page'),
-        ('reports.view', 'Reports page'),
-        ('surveys.view', 'Satisfaction survey results'),
-    ]),
-    ('Break Areas', [
-        ('areas.create', 'Add new break areas'),
-        ('areas.edit', 'Edit break area details and status'),
-        ('areas.delete', 'Delete break areas'),
-    ]),
-    ('Inventory', [
-        ('inventory.edit', 'Add, remove, replace and transfer items'),
-        ('inventory.delete', 'Delete an item from an inventory'),
-        ('itemtypes.manage', 'Add, edit and delete item types'),
-    ]),
-    ('Issues', [
-        ('issues.create', 'Report issues'),
-        ('issues.followup', 'Follow up and close issues'),
-        ('issues.delete', 'Delete issues'),
-    ]),
-    ('Maintenance & Inspections', [
-        ('maintenance.create', 'Schedule maintenance'),
-        ('maintenance.complete', 'Complete maintenance'),
-        ('maintenance.delete', 'Delete maintenance'),
-        ('inspections.create', 'Record inspections'),
-        ('inspections.delete', 'Delete inspections'),
-    ]),
-    ('Satisfaction Surveys', [
-        ('surveys.create', 'Add results'),
-        ('surveys.edit', 'Edit results'),
-        ('surveys.delete', 'Delete results'),
-    ]),
-    ('Photos & Documents', [
-        ('files.upload', 'Upload photos and documents, choose the main photo'),
-        ('files.download', 'Download documents'),
-        ('files.delete', 'Delete photos and documents'),
-    ]),
-    ('Reports & Export', [
-        ('report.register', 'Report: Break Area Register'),
-        ('report.inventory', 'Report: Inventory by Break Area'),
-        ('report.history', 'Report: Update History'),
-        ('report.issues', 'Report: Issues'),
-        ('report.inspections', 'Report: Inspection Schedule'),
-        ('report.satisfaction', 'Report: Satisfaction Survey'),
-        ('report.locations', 'Report: Summary by Location'),
-        ('report.labels', 'Print QR code labels'),
-        ('export.excel', 'Export page lists to Excel'),
-        ('print', 'Print lists and reports / save as PDF'),
-        ('report.full', 'Complete database export (all data and logs)'),
-    ]),
-    ('Settings & Backups', [
-        ('logs.view', 'Data changes log (who changed what)'),
-        ('settings.view', 'Settings page and server information'),
-        ('settings.edit', 'Change general settings (name, locations, targets)'),
-        ('backups.manage', 'See and create backups'),
-        ('trash.restore', 'Recycle Bin: see and restore deleted records'),
-    ]),
-    (ADMIN_GROUP, [
-        ('users.manage', 'Manage people, links, profiles and permissions'),
-        ('logs.activity', 'See what each person did and clicked (activity log)'),
-        ('logs.security', 'See logins and the security log'),
-        ('backups.restore', 'Restore a backup (all data goes back in time)'),
-        ('data.import', 'Import old data, load or delete all sample data'),
-    ]),
-]
-ALL = [p for _, ps in PERMISSIONS for p, _ in ps]
-PAGES = ['dashboard.view', 'areas.view', 'equipment.view', 'transactions.view', 'maintenance.view', 'surveys.view']
-ADMIN_PERMS = {p for g, ps in PERMISSIONS if g == ADMIN_GROUP for p, _ in ps}
-WORK = [p for p in ALL if p not in ADMIN_PERMS]
-# ready-made profiles (id, name, permissions); the administrator can change or delete them and make new ones
-BUILTIN_PROFILES = [
-    ('full-access', 'Full access', WORK),
-    ('administrator', 'Administrator', ALL),
-    ('data-entry', 'Data Entry', PAGES + ['inventory.edit', 'issues.create', 'issues.followup', 'maintenance.create', 'maintenance.complete',
-                                         'inspections.create', 'surveys.create', 'surveys.edit', 'files.upload', 'files.download',
-                                         'export.excel', 'print']),
-    ('maintenance', 'Maintenance Team', ['dashboard.view', 'areas.view', 'maintenance.view', 'issues.create', 'issues.followup',
-                                         'maintenance.complete', 'inspections.create', 'files.upload', 'files.download', 'print']),
-    ('viewer', 'Viewer', PAGES + ['reports.view', 'files.download', 'print', 'report.register', 'report.inventory', 'report.history',
-                                 'report.issues', 'report.inspections', 'report.satisfaction', 'report.locations']),
-    ('visitor', 'Visitor', ['dashboard.view', 'areas.view']),
-]
-LOCKED_PROFILE = 'administrator'  # always has every right, so there is always a way to manage the system
-OLD_ROLE_NAMES = {'Manager': 'Full access'}  # profile names of earlier versions
+from permissions import ADMIN_GROUP, ADMIN_PERMS, ALL, LOCKED_PROFILE, PERMISSIONS, WORK, builtin_profiles  # noqa: E402,F401
 
 
 def role_name(r):
-    return OLD_ROLE_NAMES.get(r or '', r or 'Custom')
+    return r or 'Custom'
 
 
-ITERATIONS = 600_000
+ITERATIONS = 600_000   # PBKDF2 rounds of hashes made in the BAMS style (still verified)
+KDF_N, KDF_R, KDF_P = 2 ** 17, 8, 1   # scrypt cost (OWASP minimum); tests may lower KDF_N, never production code
 USERNAME_RE = re.compile(r'^[A-Za-z0-9._-]{3,32}$')
 COMMON = {'password', 'password1', 'password123', '12345678', '123456789', '1234567890', '11111111', '00000000', 'qwerty123',
           'qwertyuiop', 'abc12345', 'admin123', 'admin1234', 'administrator', 'welcome1', 'welcome123', 'letmein1', 'iloveyou',
@@ -162,7 +74,7 @@ class NotAuthority(Forbidden):
 
 # replicated user fields (everything else in the users table is local to this PC)
 T, J, B = 'text', 'json', 'bool'
-USER_FIELDS = [('username', T), ('full_name', T), ('title', T), ('pw_hash', T), ('pw_pub', T), ('perms', J), ('areas', J), ('role', T),
+USER_FIELDS = [('username', T), ('full_name', T), ('title', T), ('pw_hash', T), ('pw_pub', T), ('perms', J), ('scopes', J), ('data_scope', T), ('role', T),
                ('active', B), ('deleted', B), ('must_change', B), ('pw_changed_at', T), ('notes', T), ('created_at', T),
                ('created_by', T), ('updated_at', T), ('updated_by', T), ('link_hash', T), ('link_nonce', T), ('link_at', T), ('link_by', T), ('login', T)]
 USER_FIELD_NAMES = {f for f, _ in USER_FIELDS}
@@ -188,16 +100,23 @@ def _parse(ts):
     return datetime.fromisoformat(ts) if ts else None
 
 
+def _scrypt(pw, salt, n, r, p):
+    return hashlib.scrypt(pw.encode('utf-8'), salt=salt, n=n, r=r, p=p, maxmem=128 * n * r * 2 + (1 << 20), dklen=32)
+
+
 def hash_password(pw):
     salt = secrets.token_bytes(16)
-    dk = hashlib.pbkdf2_hmac('sha256', pw.encode('utf-8'), salt, ITERATIONS)
-    return f'pbkdf2_sha256${ITERATIONS}${salt.hex()}${dk.hex()}'
+    return f'scrypt${KDF_N}${KDF_R}${KDF_P}${salt.hex()}${_scrypt(pw, salt, KDF_N, KDF_R, KDF_P).hex()}'
+
+
+def needs_rehash(stored):
+    return not str(stored).startswith(f'scrypt${KDF_N}${KDF_R}${KDF_P}$')
 
 
 def account_seed(pw, uid):
     """Private key that only the password gives. Its public half (pw_pub) is published with every new password, so any
     PC can check that a password change was made by somebody who knew the old password."""
-    return hashlib.pbkdf2_hmac('sha256', pw.encode('utf-8'), b'SBO-ACCOUNT1|' + uid.encode('utf-8'), ITERATIONS)
+    return _scrypt(pw, b'SBO-ACCOUNT2|' + uid.encode('utf-8'), KDF_N, KDF_R, KDF_P)
 
 
 def account_pub(pw, uid):
@@ -206,12 +125,15 @@ def account_pub(pw, uid):
 
 def verify_password(pw, stored):
     try:
-        algo, n, salt, dk = stored.split('$')
-        if algo != 'pbkdf2_sha256':
-            return False
-        test = hashlib.pbkdf2_hmac('sha256', pw.encode('utf-8'), bytes.fromhex(salt), int(n))
-        return hmac.compare_digest(test.hex(), dk)
-    except (ValueError, AttributeError):
+        parts = stored.split('$')
+        if parts[0] == 'scrypt':
+            _, n, r, p, salt, dk = parts
+            return hmac.compare_digest(_scrypt(pw, bytes.fromhex(salt), int(n), int(r), int(p)).hex(), dk)
+        if parts[0] == 'pbkdf2_sha256':
+            _, n, salt, dk = parts
+            return hmac.compare_digest(hashlib.pbkdf2_hmac('sha256', pw.encode('utf-8'), bytes.fromhex(salt), int(n)).hex(), dk)
+        return False
+    except (ValueError, AttributeError, TypeError):
         return False
 
 
@@ -242,7 +164,7 @@ class Auth:
         self.conn.executescript('''
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, full_name TEXT NOT NULL, title TEXT,
-                pw_hash TEXT NOT NULL, perms TEXT NOT NULL DEFAULT '[]', areas TEXT, role TEXT,
+                pw_hash TEXT NOT NULL, perms TEXT NOT NULL DEFAULT '[]', scopes TEXT, data_scope TEXT, role TEXT,
                 active INTEGER NOT NULL DEFAULT 1, deleted INTEGER NOT NULL DEFAULT 0, must_change INTEGER NOT NULL DEFAULT 1,
                 failed INTEGER NOT NULL DEFAULT 0, locked_until TEXT, last_login TEXT, last_ip TEXT, pw_changed_at TEXT,
                 created_at TEXT, created_by TEXT, updated_at TEXT, updated_by TEXT, ver INTEGER NOT NULL DEFAULT 1, notes TEXT);
@@ -352,13 +274,14 @@ class Auth:
         u = dict(r)
         perms = [p for p in json.loads(u['perms'] or '[]') if p in ALL]
         u['perms'] = perms
-        u['areas'] = json.loads(u['areas']) if u['areas'] else None
+        u['scopes'] = json.loads(u['scopes']) if u['scopes'] else None
+        u['data_scope'] = u.get('data_scope') or 'all'
         u['display'] = self.display(u)
         return u
 
     @staticmethod
     def public(u, online=None):
-        out = {k: u[k] for k in ('id', 'username', 'full_name', 'title', 'perms', 'areas', 'role', 'must_change', 'last_login',
+        out = {k: u[k] for k in ('id', 'username', 'full_name', 'title', 'perms', 'scopes', 'data_scope', 'role', 'must_change', 'last_login',
                                  'last_ip', 'pw_changed_at', 'created_at', 'created_by', 'updated_at', 'updated_by', 'ver', 'notes')}
         out['active'] = bool(u['active'])
         out['must_change'] = bool(u['must_change'])
@@ -430,7 +353,7 @@ class Auth:
         me = self.node
         row = {'username': username, 'full_name': full_name, 'title': 'System Administrator', 'pw_hash': h,
                'pw_pub': account_pub(password, uid), 'perms': list(ALL),
-               'areas': None, 'role': 'Administrator', 'active': True, 'deleted': False, 'must_change': False, 'pw_changed_at': ts,
+               'scopes': None, 'data_scope': 'all', 'role': 'Administrator', 'active': True, 'deleted': False, 'must_change': False, 'pw_changed_at': ts,
                'notes': '', 'created_at': ts, 'created_by': 'First setup', 'updated_at': ts, 'updated_by': 'First setup'}
         ops = [{'e': 'nodes', 'id': me.id, 'op': 'insert', 'noaudit': True,
                 's': {'name': me.name, 'pub': me.pub.hex(), 'cert_fp': me.cert_fp, 'status': 'active', 'role': 'authority', 'address': '',
@@ -479,12 +402,12 @@ class Auth:
             self.conn.execute('INSERT INTO sessions (token_hash, user_id, created, last_seen, ip, agent) VALUES (?,?,?,?,?,?)',
                               (_token_hash(token), u['id'], ts, ts, ip, (agent or '')[:300]))
         self.log(u['display'], ip, 'login', username, agent[:300] if agent else '')
-        if not u.get('pw_pub') and self.node is not None and self.node.is_authority:
-            try:  # account from before the multi-PC version: publish its password key, so it can change its password on any PC
-                self._write('System', ip, 'Password key of ' + username, [{'e': 'users', 'id': u['id'], 'op': 'update', 'noaudit': True,
-                                                                          's': {'pw_hash': u['pw_hash'], 'pw_pub': account_pub(password, u['id'])}}])
+        if (not u.get('pw_pub') or needs_rehash(u['pw_hash'])) and self.node is not None and self.node.is_authority:
+            try:  # older or weaker hash: the administrator PC replaces it (and the password key) with the current scheme
+                self._write('System', ip, 'Password hash of ' + username, [{'e': 'users', 'id': u['id'], 'op': 'update', 'noaudit': True,
+                                                                           's': {'pw_hash': hash_password(password), 'pw_pub': account_pub(password, u['id'])}}])
             except Exception as e:  # noqa: BLE001 - logging in must not fail because of this
-                print('password key not published:', e)
+                print('password hash not upgraded:', e)
         return token, self.get(u['id'])
 
     def session(self, token, ip, touch=True):
@@ -682,7 +605,7 @@ class Auth:
             perms = ALL if pid == LOCKED_PROFILE else sorted(p for p in perms if p in ALL)
             out.append({'id': pid, 'name': name, 'perms': list(perms), 'builtin': builtin, 'locked': pid == LOCKED_PROFILE,
                         'admin': 'users.manage' in perms, 'users': used.get(name, 0)})
-        for pid, name, perms in BUILTIN_PROFILES:
+        for pid, name, perms in builtin_profiles():
             r = rows.pop(pid, None)
             if r is None:
                 add(pid, name, perms, True)
@@ -705,9 +628,6 @@ class Auth:
             raise AuthError('Give the profile a name, e.g. "Visitor".')
         if name.lower() == 'custom':
             raise AuthError('"Custom" is used for people with their own set of permissions. Choose another name.')
-        if name.lower() in {n.lower() for n in OLD_ROLE_NAMES}:
-            raise AuthError(f'"{name}" was the old name of the profile "{OLD_ROLE_NAMES[next(n for n in OLD_ROLE_NAMES if n.lower() == name.lower())]}". '
-                            'Choose another name.')
         ts, res = now(), {}
 
         def check(c):
@@ -789,8 +709,9 @@ class Auth:
         role = str(d.get('role') or 'Custom')[:40]
         login = 'link' if d.get('login') == 'link' else 'password'
         perms = sorted({p for p in (d.get('perms') or []) if p in ALL})
-        areas = d.get('areas')
-        areas = None if areas is None else sorted({str(a)[:120] for a in areas})
+        data_scope = d.get('data_scope') if d.get('data_scope') in ('all', 'scopes', 'own') else 'all'
+        scopes = d.get('scopes')
+        scopes = None if scopes is None or data_scope != 'scopes' else sorted({str(a)[:120] for a in scopes})
         active = bool(d.get('active', True))
         must_change = bool(d.get('must_change', True))
         if not full_name:
@@ -804,7 +725,7 @@ class Auth:
             raise NotAuthority(self.authority_hint())
         ts = now()
         res = {}
-        new_row = {'username': username, 'full_name': full_name, 'title': title, 'perms': perms, 'areas': areas, 'role': role,
+        new_row = {'username': username, 'full_name': full_name, 'title': title, 'perms': perms, 'scopes': scopes, 'data_scope': data_scope, 'role': role,
                    'active': active, 'must_change': must_change, 'notes': notes, 'login': login, 'updated_at': ts, 'updated_by': actor['display']}
 
         def new_link(user_id):
@@ -841,7 +762,7 @@ class Auth:
                     raise AuthError('At least one active user must keep the right to manage users.')
                 old_login = 'link' if old.get('login') == 'link' else 'password'
                 cur = {'username': old['username'], 'full_name': old['full_name'], 'title': old['title'], 'perms': sorted(old['perms']),
-                       'areas': old['areas'], 'role': old['role'], 'active': bool(old['active']), 'must_change': bool(old['must_change']),
+                       'scopes': old['scopes'], 'data_scope': old.get('data_scope') or 'all', 'role': old['role'], 'active': bool(old['active']), 'must_change': bool(old['must_change']),
                        'notes': old['notes'], 'login': old_login}
                 row, extra = dict(new_row), []
                 if login == 'link':
@@ -885,7 +806,7 @@ class Auth:
         new = self.get(uid) or self._user(self.conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone())
         if old is None:
             self.log(actor['display'], ip, 'user-created', new['display'],
-                     f'Role: {role}; active: {active}; areas: {"all" if areas is None else len(areas)}; permissions: {", ".join(perms) or "none"}')
+                     f'Role: {role}; active: {active}; data: {data_scope} ({"all" if scopes is None else len(scopes)}); permissions: {", ".join(perms) or "none"}')
         else:
             ch = []
             for k, label in (('username', 'User name'), ('full_name', 'Name'), ('title', 'Job title'), ('role', 'Role'), ('active', 'Active'),
@@ -897,8 +818,8 @@ class Auth:
                 ch.append('Permissions added: ' + ', '.join(add))
             if rem:
                 ch.append('Permissions removed: ' + ', '.join(rem))
-            if old['areas'] != new['areas']:
-                ch.append(f'Break areas: {"all" if old["areas"] is None else ", ".join(old["areas"])} -> {"all" if new["areas"] is None else ", ".join(new["areas"])}')
+            if (old['scopes'], old.get('data_scope')) != (new['scopes'], new.get('data_scope')):
+                ch.append(f'Data access: {old.get("data_scope") or "all"} {old["scopes"] or ""} -> {new.get("data_scope") or "all"} {new["scopes"] or ""}'.strip())
             if ch:
                 self.log(actor['display'], ip, 'user-changed', new['display'], '; '.join(ch))
             if old['active'] and not new['active']:
@@ -1072,7 +993,7 @@ class UserFolder:
             vals = {k: v for k, v in vals.items() if v is not None}
             self.conn.execute(f'INSERT INTO users (id, {", ".join(vals)}) VALUES (?, {", ".join("?" * len(vals))})', (uid, *vals.values()))
             return
-        vals = {k: v for k, v in vals.items() if v is not None or k in ('areas',)}
+        vals = {k: v for k, v in vals.items() if v is not None or k in ('scopes',)}
         if all(cur[k] == v for k, v in vals.items()):
             return
         self.conn.execute(f'UPDATE users SET {", ".join(k + "=?" for k in vals)}, ver=ver+1 WHERE id=?', (*vals.values(), uid))

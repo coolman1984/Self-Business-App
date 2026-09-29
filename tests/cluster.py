@@ -14,6 +14,9 @@ import engine_domain  # noqa: E402
 from store import ENTITIES, Store  # noqa: E402
 
 engine_domain.register()
+import auth  # noqa: E402
+
+auth.KDF_N = 2 ** 10  # tests only: keep logins fast; the production value is 2**17
 
 
 class Peer:
