@@ -34,6 +34,12 @@ class Entity:
     scope_via: Optional[tuple] = None             # (fk js key, parent entity name): the scope of the parent record
     dup_keys: Optional[list] = None               # js keys; two live records with equal values are a possible duplicate
     file_fields: tuple = ()                       # js keys holding '/files/...' references
+    search: tuple = ()                            # js keys whose text is searchable (global search, command palette)
+    phone_fields: tuple = ()                      # searchable as phone numbers (normalised to +20...)
+    email_fields: tuple = ()
+    subtitle_fields: tuple = ()                   # shown under the title in search results
+    money_fields: tuple = ()                      # hidden from users without the permission money.view
+    sensitive_fields: tuple = ()                  # hidden from users without the permission data.sensitive
     immutable: bool = False                       # write-once record (issued documents): the earliest write wins, edits are refused
     index: tuple = ()                             # extra columns to index
     name_fields: tuple = ('name', 'title', 'caption')  # what to call a record in messages

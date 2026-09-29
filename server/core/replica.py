@@ -208,6 +208,7 @@ class BusinessFolder:
         self.reg = Registers(conn, deps_of)
         self.coerce = coerce
         self.problems = []
+        self.touched = set()  # (entity, id) of rows changed since the last pop (for the derived search index)
 
     def fold(self, env, status):
         """Folds one changeset (inside the caller's transaction). Returns True when rows changed."""
@@ -260,6 +261,7 @@ class BusinessFolder:
             self.reg.write(tbl, rid, '_ins', env, prio, hlc, op['ci'] if boot and isinstance(op.get('ci'), list) else [env['ts'], env['actor']])
         self.reg.write(tbl, rid, '_upd', env, prio, hlc, op['ui'] if boot and isinstance(op.get('ui'), list) else [env['ts'], env['actor']])
         changed = self.materialize(op['e'], rid)
+        self.touched.add((op['e'], rid))
         for js, delta in sorted((op.get('n') or {}).items()):
             if js in spec['counters'] and isinstance(delta, (int, float)) and not isinstance(delta, bool) and delta:
                 col = next(c for j, c, _ in spec['fields'] if j == js)

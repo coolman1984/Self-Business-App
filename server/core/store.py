@@ -89,8 +89,21 @@ class Store:
         self.lock = threading.RLock()
         self.journal = None
         self.folder = None
+        self.after_fold = []  # callbacks fn(store, touched) - derived indexes
         self.conn = self._open()
         self._fp = (None, None)
+
+    def _fold_done(self):
+        touched = set(self.folder.touched) if self.folder else set()
+        if self.folder:
+            self.folder.touched.clear()
+        if touched:
+            for fn in self.after_fold:
+                try:
+                    fn(self, touched)
+                except Exception as e:  # noqa: BLE001 - a derived index must never break saving; it is rebuilt from the data
+                    if self.journal:
+                        self.journal.alert('index', f'The search index could not be updated ({e}); it is rebuilt automatically.', '', 'warning', key='index|update')
 
     def attach(self, journal):
         """Connects the change journal. From now on every save goes through it."""
@@ -252,6 +265,7 @@ class Store:
                 self.fold_pending()  # the change is safely in the journal - apply it again from there
             except Exception as e:  # noqa: BLE001 - it is saved; it will be applied at the next start at the latest
                 self.journal.alert('fold', f'A saved change could not be shown yet ({e}); it is applied again automatically.', '', 'warning')
+        self._fold_done()
         self.journal._notify([rec])
         return rec
 
@@ -376,25 +390,7 @@ class Store:
                     c.execute('ROLLBACK')
                     raise
                 total += len(items)
-
-    def fold_upgrade(self):
-        """First fold after the upgrade, in ONE transaction: the bootstrap changesets re-create every row with the
-        same values; quantities are counters, so they are first set to 0 and then re-added from the journal."""
-        with self.lock:
-            c = self.conn
-            c.execute('BEGIN IMMEDIATE')
-            try:
-                for e, spec in SPECS.items():
-                    for js, col, _ in spec['fields']:
-                        if js in spec['counters']:
-                            c.execute(f'UPDATE {spec["table"]} SET {col}=0')
-                for env, status in self.journal.iter_after(replica.markers(c)):
-                    self.folder.fold(env, status)
-                self._bump(c)
-                c.execute('COMMIT')
-            except Exception:
-                c.execute('ROLLBACK')
-                raise
+                self._fold_done()
 
     def restore_from(self, path, user, ip, label, user_id='', kind='restore'):
         """Brings the data back to the state of a backup file WITHOUT rolling back history: the differences
