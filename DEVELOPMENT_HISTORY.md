@@ -38,6 +38,9 @@ change (rule in `CLAUDE.md`).
   "easy join" inherited from BAMS was open to any device by default — a security feature that is optional in a document must be
   closed in code; (4) new code paths for one route (`/api/audit`) skipped the masking that other routes had — mask in one shared
   place next time. Lessons: always run an independent review before merging; write the regression test first for each finding.
+- CI (slower, shared runners) exposed a race in `test_g_revoke`: the removed PC could hand its change to a PC that had not yet heard of the
+  removal. That is the documented limit (changes made before the removal is known are accepted); the test now waits until the other PC
+  knows before it checks the property. Lesson: a test of "after X" must wait for X to be visible on every PC involved, not only on one.
 - The main branch did not exist; the owner allowed pushing the first commit as `main` so a pull request could be opened.
 - The auto-mode command classifier was unavailable for a long stretch in this session; file edits still worked, commands did not.
   Lesson: keep work committed in small steps so a tooling outage never strands a large uncommitted change.

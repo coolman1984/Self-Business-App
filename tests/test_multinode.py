@@ -362,6 +362,10 @@ class T03_Cluster(Base):
         self.converged()
         ac.post('/api/devices/revoke', {'id': self.servers[2].node_id})
         wait_until(lambda: any(a['kind'] == 'revoked' for a in self.clients[2].get('/api/devices')['alerts']), 30, what='revocation seen')
+        # the removed PC could still hand a change to a PC that has not yet heard of the removal (documented limit: changes made
+        # before the removal is known are accepted). The property tested here starts once the other PCs know - wait for that.
+        wait_until(lambda: {n['name']: n['status'] for n in self.clients[1].get('/api/devices')['nodes']}.get('pc2') == 'revoked', 30,
+                   what='the other PC knows about the removal')
         self.clients[2].post('/api/commit', {'label': 'after revoke', 'ops': [area_op('RV2', 'After revoke')]})
         time.sleep(4)
         self.assertIsNone(get_area(self.ac, 'RV2'))
