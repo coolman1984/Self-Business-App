@@ -29,7 +29,7 @@ extensions. The BAMS design document stays the deep reference; this file records
 | S1 | **Envelope v2**: ops stored beside the envelope, envelope carries `ops_hash`; signature/chain cover the envelope | legal erasure must remove personal values from history without breaking verification (SECURITY §5). Cheapest now: no legacy data. |
 | S2 | **Registry-driven specs** (entities, resolvers, counters, duplicate detectors, lock-after rules) instead of the `ENTITIES` dict | modules register entities; BAMS `SPECS` is already the right shape |
 | S3 | **Relay transport** (later phase): the same pull/push protocol through an internet relay for teams that are not on one LAN; changesets are signed end-to-end; encrypted end-to-end if AES is available (ADR-011) | a 2–4 person team often works from home; BAMS sync is LAN-only by design |
-| S4 | New resolvers: `min` (earliest date wins), `lock-after:status=issued` (fields frozen once a document is issued; later concurrent edits → flag) | money snapshots (ARCHITECTURE §5.4) |
+| S4 | New resolver `min` (earliest date / lowest number wins) and **write-once (`immutable`) entities** for issued documents: the earliest write by (clock, PC, number) is the only one kept, whatever the order of arrival; later writes are remembered (`sync_dropped`) and the row is flagged `edited-after-issue`; local edits are refused. **Replaces the planned `lock-after` rule**: a field lock decided by "was the document issued when this edit arrived" cannot be made deterministic without keeping the dominated history of every field; a separate snapshot entity that is write-once can (built and tested in Phase 1: `tests/test_resolvers.py`). | money snapshots (ARCHITECTURE §5.4) |
 | S5 | Derived `index.db` rebuilt after fold (search, timeline, attention) | read performance; never replicated |
 
 Kept exactly: HLC, version vectors, per-origin gapless `cseq`, causal delivery, `prev` hash chain, Ed25519 node and
@@ -43,7 +43,7 @@ update", CAS attachments with resumable verified transfer, backup PC role for th
 | parties, contact points | keep both + possible-duplicate flag (same normalised phone/email) | LWW, surfaced in "To decide" | delete wins, edit kept + flagged | merge = redirect (`merged_into`), never rewrite |
 | opportunities, projects, tasks, tickets | keep both | `status` = `rank` (e.g. done beats doing), other fields LWW surfaced | delete wins, flagged | follower fields travel with their leader (`closed_at` follows `status`) |
 | quotes/invoices (draft) | keep both | LWW surfaced | delete wins | |
-| quotes/invoices (issued) | — | `lock-after:status=issued`: snapshot fields never change; concurrent edits flagged "edited after issue" | void instead of delete | number assigned by the issuing PC's series |
+| issued documents (snapshot entities, write-once) | two PCs issuing the same document: the earliest write is kept everywhere, the other is flagged | never edited (the draft stays editable; changes after issue = credit note / new version) | void instead of delete | number assigned by the issuing PC's series |
 | payments, allocations, time entries (approved), attendance marks, ticket events, activities | keep all (events) | — | delete only via reversal event | possible-duplicate payment flag (party+amount+day+method) |
 | revision rounds used, licence seats used | **counter** (deltas add up) | — | — | negative/over-limit flagged |
 | settings, brand | per key LWW surfaced | | | |

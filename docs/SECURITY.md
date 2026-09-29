@@ -11,7 +11,7 @@ backups (contain everything, incl. password hashes) · the journal (history).
 
 | Threat | Control |
 |---|---|
-| Unknown PC on the LAN joins or reads data | enrolment + pinned TLS certificates; revocation; (open-join "easy mode" only as an explicit setting) |
+| Unknown PC on the LAN joins or reads data | enrolment + pinned TLS certificates; revocation; joining without a code only inside a time window (1–60 min) that the administrator opens and that closes by itself (`open-join`), refused otherwise and reported as an alert |
 | Sniffing / MITM between PCs | TLS 1.3, pinned self-signed certificates (BAMS) |
 | A normal user or PC forges admin/permission changes | authority-key signatures on `admin` changesets, verified on every PC |
 | A PC changes someone else's password | password proof (BAMS: signature from a key derived from the old password) |
@@ -38,11 +38,12 @@ backups (contain everything, incl. password hashes) · the journal (history).
   3. **Data scope**: all records · records of my clients/projects · only records assigned to me.
   4. **Money visibility**: sees amounts or not (serializer masks money fields; reports hidden).
   5. **Admin rights** (never on a personal link): users, backups, restore, settings, devices, import, legal erasure.
-- Passwords: min length 10, blocklist of common passwords, no composition rules (NIST 800-63B style).
-  Hash per ADR-011: scrypt (N=2^17, r=8, p=1, 16-byte salt) or Argon2id (if the dependency is accepted); existing
-  PBKDF2-SHA256 600k hashes (engine compatibility) verified and re-hashed at next login. The password-proof key
-  derivation follows the same KDF with its own domain string. A benchmark gate in Phase 1 keeps login < 1 s on the
-  reference old laptop; if not, document the measured choice.
+- Passwords: min length 10 (setting), blocklist of common passwords, no composition rules (NIST 800-63B style).
+  **Implemented (Phase 1):** scrypt (N=2^17, r=8, p=1, 16-byte salt, standard library); PBKDF2-SHA256 hashes (BAMS style) still
+  verify and are replaced by a scrypt hash at the next login on the administrator PC. The password-proof key derivation uses
+  the same scrypt parameters with its own domain string (`SBO-ACCOUNT2`). Argon2id (`cryptography` ≥ 44) is deferred to Phase 11
+  (ADR-020). Open: benchmark on the reference old laptop (TASKS 1.16) — the target is a login under 1 s.
+  Test-only: `tests/engine_domain.py` lowers `auth.KDF_N`; no configuration or environment variable of the product can weaken it.
 - Forced password change for temporary passwords; admin reset tool on the PC itself (BAMS `reset-admin`).
 
 ## 4. Data protection by design
@@ -52,7 +53,16 @@ backups (contain everything, incl. password hashes) · the journal (history).
 - Sensitive fields (national id, licence keys, notes marked private) are masked in lists and exports unless the
   permission `data.sensitive` is given; licence keys stored as hash + last 4 characters.
 
-## 5. Legal erasure (separate, highly privileged)
+## 5. Legal erasure (separate, highly privileged) — implemented in Phase 1 (`tests/test_erase.py`)
+
+Implementation notes: the erase order is `kind: erase` (priority 4, authority-signed, refused from any other PC); it blanks
+fields (not whole records) so the record's other data and its relations stay. Erased fields cannot be entered again on the same
+record. On every PC that accepts the order the copies outside the database are blanked too: the monthly audit files, every backup
+copy (business data and journal copies, in the backup folder and in the second folders) — see `Backups.scrub`, `Store.scrub_logs`.
+No backup is taken before an erase (it would keep the data). Files in the content-addressed store: file removal by hash is still to
+build with the file module (TASKS). The route `/api/erase` needs `privacy.erase`, access to all data, the user's own password and
+the typed word ERASE. A blank value in another PC's change is accepted only when an erase order covers it; otherwise the change
+waits and an integrity alert is raised.
 
 "Never delete anything" is not lawful in every case (PDPL right to erasure, retention limits). Design (ADR-008):
 
