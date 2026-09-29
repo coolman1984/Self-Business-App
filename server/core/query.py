@@ -46,7 +46,7 @@ def _decode(text):
 def access_for(user):
     """What the query layer needs to know about the logged-in user: (data scope, scope ids, permissions, user id)."""
     perms = set(user.get('perms') or [])
-    return {'mode': user.get('data_scope') or 'all', 'scopes': user.get('scopes') or [], 'perms': perms, 'user': user.get('display') or user.get('username')}
+    return {'mode': user.get('data_scope') or 'all', 'scopes': user.get('scopes') or [], 'perms': perms, 'user_id': user.get('id') or ''}
 
 
 def run(store, entity, access, filters=None, search=None, sort=None, desc=False, limit=50, cursor=None, include_deleted=False):
@@ -99,8 +99,8 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
                 where.append(f'{cols[fk][0]} IN (SELECT id FROM {ptable} WHERE {pcol} IN ({",".join("?" * len(access["scopes"])) or "NULL"}))')
                 args += list(access['scopes'])
     elif mode == 'own':
-        where.append('created_by=?')
-        args.append(access['user'])
+        where.append('created_by_id=?')
+        args.append(access['user_id'])
     if search:
         like_cols = [cols[f][0] for f in (meta.name_fields if meta else ()) if f in cols and f not in hidden] or \
             [c for f, (c, k) in cols.items() if k == 'text' and f not in hidden][:3]
@@ -175,8 +175,8 @@ def can_see(entity, row, access, store):
     if mode == 'all':
         return True
     if mode == 'own':
-        r = store.conn.execute(f'SELECT created_by FROM {ENTITIES[entity][0]} WHERE id=?', (row.get('id'),)).fetchone()
-        return bool(r and r[0] == access['user'])
+        r = store.conn.execute(f'SELECT created_by_id FROM {ENTITIES[entity][0]} WHERE id=?', (row.get('id'),)).fetchone()
+        return bool(r and r[0] and r[0] == access['user_id'])
     if mode == 'scopes':
         sid = store._scope_of(entity, row)
         return sid is not None and sid in set(access['scopes'])

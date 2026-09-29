@@ -117,6 +117,48 @@ class InProcessTest(unittest.TestCase):
             self.assertIn('not valid', svc.status['n1']['last_error'])
 
 
+class SecondReviewTest(unittest.TestCase):
+    def test_two_workers_never_download_the_same_file_into_one_part_file(self):
+        import hashlib
+        import os
+        import shutil
+        import tempfile
+        import threading
+        import time
+        from sync import SyncService
+        data = os.urandom(300_000)
+        sha = hashlib.sha256(data).hexdigest()
+        d = tempfile.mkdtemp()
+        try:
+            svc = SyncService.__new__(SyncService)
+            svc.uploads, svc.lock, svc.fetching = d, threading.RLock(), set()
+            svc.file_path = lambda src: os.path.join(d, 'cas', 'f.bin')
+            svc.sync_logger = type('L', (), {'write': lambda self, x: None})()
+            calls = []
+
+            class SlowConnection:
+                def request(self, method, path, raw=False, headers=None, sink=None):
+                    calls.append(1)
+                    for i in range(0, len(data), 50_000):  # a slow download: the other worker arrives meanwhile
+                        sink.write(data[i:i + 50_000])
+                        sink.flush()
+                        time.sleep(0.05)
+                    return type('R', (), {'status': 200})(), b''
+                def close(self):
+                    pass
+            results = []
+            ts = [threading.Thread(target=lambda: results.append(svc.fetch_file(SlowConnection(), '/files/cas/f.bin', sha, len(data)))) for _ in range(3)]
+            [t.start() for t in ts]
+            [t.join() for t in ts]
+            time.sleep(0.4)  # a straggler writing into the moved file would still be appending now
+            with open(os.path.join(d, 'cas', 'f.bin'), 'rb') as f:
+                self.assertEqual(f.read(), data)
+            self.assertEqual(len(calls), 1, 'only one worker downloads a given file')
+            self.assertEqual(sorted(results), [False, False, True])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class ServerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -153,6 +195,39 @@ class ServerTest(unittest.TestCase):
         out = (r.status, r.getheader('Content-Disposition') or '')
         h.close()
         return out
+
+    def test_users_limited_to_part_of_the_data_cannot_restore_or_fetch_foreign_files(self):
+        ac = self.ac
+        ac.post('/api/commit', {'label': 'a', 'ops': [{'e': 'areas', 'id': 'FA', 'op': 'put', 'row': {'name': 'FA'}},
+                                                     {'e': 'areas', 'id': 'FB', 'op': 'put', 'row': {'name': 'FB'}}]})
+        img = b'\xff\xd8\xff\xe0' + b'x' * 200
+        up = ac.call('POST', '/api/upload?name=b.jpg', raw=img, headers={'Content-Type': 'application/octet-stream'})
+        ac.post('/api/commit', {'label': 'p', 'ops': [{'e': 'photos', 'id': 'ph', 'op': 'put', 'row': {'areaId': 'FB', 'src': up['src']}}]})
+        ac.post('/api/users/save', {'username': 'fa.only', 'full_name': 'Fa Only', 'password': 'Green-Hill-5531', 'must_change': False, 'data_scope': 'scopes',
+                                    'scopes': ['FA'], 'perms': ['dashboard.view', 'areas.view', 'files.download', 'backups.restore', 'backups.manage']})
+        c = self.S.client()
+        c.login('fa.only', 'Green-Hill-5531')
+        with self.assertRaises(ApiError) as e:
+            c.call('GET', up['src'])
+        self.assertEqual(e.exception.code, 404, 'a file used only by a record outside the scope')
+        self.assertEqual(ac.call('GET', up['src']), img)
+        name = ac.post('/api/backups')['name']
+        with self.assertRaises(ApiError) as e:
+            c.post('/api/backups/restore', {'name': name})
+        self.assertEqual(e.exception.code, 403)
+
+    def test_own_scope_survives_a_rename_of_the_user(self):
+        ac = self.ac
+        u = ac.post('/api/users/save', {'username': 'own.one', 'full_name': 'Own One', 'password': 'Cedar-Lake-8812', 'must_change': False,
+                                        'data_scope': 'own', 'perms': ['dashboard.view', 'areas.view', 'areas.create', 'areas.edit']})
+        c = self.S.client()
+        c.login('own.one', 'Cedar-Lake-8812')
+        c.post('/api/commit', {'label': 'mine', 'ops': [{'e': 'areas', 'id': 'OWN1', 'op': 'put', 'row': {'name': 'Mine'}}]})
+        self.assertEqual([r['id'] for r in c.get('/api/q/areas')['rows']], ['OWN1'])
+        ac.post('/api/users/save', {**next(x for x in ac.get('/api/users')['users'] if x['id'] == u['id']), 'full_name': 'Renamed Person', 'username': 'own.renamed'})
+        c2 = self.S.client()
+        c2.login('own.renamed', 'Cedar-Lake-8812')
+        self.assertEqual([r['id'] for r in c2.get('/api/q/areas')['rows']], ['OWN1'], 'still sees its own records after the rename')
 
     def test_a_password_is_needed_again_for_the_key_export_and_erase(self):
         with self.assertRaises(ApiError) as e:

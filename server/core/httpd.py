@@ -248,8 +248,8 @@ class App:
                     if not {c.get('scope'), c.get('scope_before', c.get('scope'))} <= scopes:
                         raise Forbidden('You can only change the records assigned to you.')
                 elif mode == 'own' and op != 'insert':
-                    r = self.store.conn.execute(f'SELECT created_by FROM {ENTITIES[e][0]} WHERE id=?', (c['id'],)).fetchone()
-                    if not r or r[0] != u['display']:
+                    r = self.store.conn.execute(f'SELECT created_by_id FROM {ENTITIES[e][0]} WHERE id=?', (c['id'],)).fetchone()
+                    if not r or not r[0] or r[0] != u['id']:
                         raise Forbidden('You can only change the records you created yourself.')
         return guard
 
@@ -599,6 +599,8 @@ def make_handler(app):
                 return self.send(200, data, TYPES['.xlsx'], {'Content-Disposition': attachment_header(f'Export_{datetime.now():%Y-%m-%d_%H%M}.xlsx')})
             if p.startswith('/files/'):
                 self.need('files.download')
+                if not self.file_allowed(p):
+                    return self.send(404, {'error': 'File not found'})
                 return self.serve_file(app.uploads, p[len('/files/'):], src=p)
             if self.extra_route('GET', p):
                 return
@@ -756,6 +758,7 @@ def make_handler(app):
                 return self.send(200, {'ok': not app.backups.last_error, 'error': app.backups.last_error, 'name': name})
             if p == '/api/backups/restore':
                 self.need('backups.restore')
+                self.need_all_data()  # a restore replaces records everywhere: not for users limited to part of the data
                 d = self.json_body()
                 safety, res = app.backups.restore(d.get('name'), self.user, self.ip, self.u['id'])
                 app.journal.reapply_erasures()
@@ -951,6 +954,26 @@ def make_handler(app):
             app.backups.last_error = ''
 
         # ------------------------------------------------------------ links, files, static
+        def file_allowed(self, src):
+            """A user limited to part of the data may download a file only when a record they can see uses it (or they uploaded it
+            themselves and it is not attached yet). Logos and other settings files are open to everybody."""
+            acc = self.access()
+            if acc['mode'] == 'all':
+                return True
+            store = app.store
+            if store.conn.execute('SELECT 1 FROM settings WHERE deleted=0 AND value=?', (json.dumps(src),)).fetchone():
+                return True
+            for name, m in META.items():
+                for js, col, _, _ in m.fields:
+                    if js not in m.file_fields:
+                        continue
+                    for (rid,) in store.conn.execute(f'SELECT id FROM {m.table} WHERE {col}=? AND deleted=0', (src,)).fetchall():
+                        row = store.get(name, rid)
+                        if row and query_mod.can_see(name, row, acc, store):
+                            return True
+            r = store.conn.execute('SELECT created_by_id FROM attachments WHERE id=?', (src,)).fetchone()
+            return bool(r and r[0] and r[0] == self.u['id'])
+
         def link_page(self, token):
             """Opening a personal link shows a tiny page that logs in by itself (js/quick.js). Logging in only happens with the
             POST from this page, so a program that merely looks at the link (a chat preview, a virus scanner) logs nobody in."""

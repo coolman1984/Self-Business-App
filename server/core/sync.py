@@ -329,6 +329,7 @@ class SyncService:
         self.server = None
         self.stop = False
         self.missing = {}  # attachment path -> {'tries', 'last_error'}
+        self.fetching = set()  # SHA-256 of the files being downloaded right now
         self.missing_checked = (None, 0)
         self.journal.listeners.append(lambda recs: self.kick())
         self.sync_logger = SyncLog(os.path.join(system.data_dir, 'logs'))
@@ -649,7 +650,20 @@ class SyncService:
         return done
 
     def fetch_file(self, c, src, sha, size):
-        """Downloads one file into uploads/.incoming/<sha>.part (resuming), verifies it and moves it into place."""
+        """Downloads one file into uploads/.incoming/<sha>.part (resuming), verifies it and moves it into place.
+        One download per file at a time: two peer workers appending to the same .part file corrupt it (and the one that finishes
+        second would keep writing into the file that was already moved into place)."""
+        with self.lock:
+            if sha in self.fetching:
+                return False
+            self.fetching.add(sha)
+        try:
+            return self._fetch_file(c, src, sha, size)
+        finally:
+            with self.lock:
+                self.fetching.discard(sha)
+
+    def _fetch_file(self, c, src, sha, size):
         final = self.file_path(src)
         inc = os.path.join(self.uploads, '.incoming')
         os.makedirs(inc, exist_ok=True)

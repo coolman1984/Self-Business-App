@@ -136,11 +136,13 @@ class Store:
                 self.folder = replica.BusinessFolder(self.conn, SPECS, self.journal.deps_of, _coerce)
 
     def _migrate(self, conn):
-        meta = 'id TEXT PRIMARY KEY, ver INTEGER NOT NULL DEFAULT 1, created_at TEXT, created_by TEXT, updated_at TEXT, updated_by TEXT, ' \
+        meta = 'id TEXT PRIMARY KEY, ver INTEGER NOT NULL DEFAULT 1, created_at TEXT, created_by TEXT, created_by_id TEXT, updated_at TEXT, updated_by TEXT, ' \
                'deleted INTEGER NOT NULL DEFAULT 0, deleted_at TEXT, deleted_by TEXT, deleted_txn TEXT'
         for name, (table, _, fields) in [*ENTITIES.items(), ('files', (FILES[0], '', [(a, b, c, '') for a, b, c in FILES[1]]))]:
             conn.execute(f'CREATE TABLE IF NOT EXISTS {table} ({meta})')
             have = {r[1] for r in conn.execute(f'PRAGMA table_info({table})')}
+            if 'created_by_id' not in have:
+                conn.execute(f'ALTER TABLE {table} ADD COLUMN created_by_id TEXT')
             for _, col, kind, _ in fields:
                 if col not in have:
                     sql_type = {I: 'INTEGER', R: 'REAL', B: 'INTEGER'}.get(kind, 'TEXT')

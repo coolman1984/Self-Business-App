@@ -16,7 +16,7 @@ registry.register(registry.Entity('people', 'people', 'People', [
     ('nid', 'nid', T, 'National id')], search=('name', 'company'), phone_fields=('phone',), email_fields=('email',),
     subtitle_fields=('company',), sensitive_fields=('nid',), scope_field='company'))
 
-ALL = {'mode': 'all', 'scopes': [], 'perms': set(), 'user': 'boss'}
+ALL = {'mode': 'all', 'scopes': [], 'perms': set(), 'user_id': 'boss-id'}
 
 
 class NormaliserTest(unittest.TestCase):
@@ -87,8 +87,8 @@ class SearchTest(unittest.TestCase):
     def test_scope_filtering(self):
         self.assertEqual(self.ids('ibrahim', {**ALL, 'mode': 'scopes', 'scopes': ['c1']}), [])
         self.assertEqual(self.ids('ابراهيم', {**ALL, 'mode': 'scopes', 'scopes': ['c1']}), ['p3'])
-        self.assertEqual(self.ids('ابراهيم', {**ALL, 'mode': 'own', 'user': 'user@pc0'}), ['p3'])
-        self.assertEqual(self.ids('ابراهيم', {**ALL, 'mode': 'own', 'user': 'somebody'}), [])
+        self.assertEqual(self.ids('ابراهيم', {**ALL, 'mode': 'own', 'user_id': 'uid-pc0'}), ['p3'])
+        self.assertEqual(self.ids('ابراهيم', {**ALL, 'mode': 'own', 'user_id': 'somebody-else'}), [])
 
     def test_changes_and_deletes_update_the_index(self):
         ver = self.p.store.get('people', 'p2')['ver']

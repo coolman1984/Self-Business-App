@@ -258,7 +258,7 @@ class BusinessFolder:
             stamp = op['di'] if boot and isinstance(op.get('di'), list) else [env['ts'], env['actor'], env['id']]
             self.reg.write(tbl, rid, '_del', env, prio, hlc, [1 if op['x'] else 0, *stamp[:3]])
         if op.get('op') == 'insert':
-            self.reg.write(tbl, rid, '_ins', env, prio, hlc, op['ci'] if boot and isinstance(op.get('ci'), list) else [env['ts'], env['actor']])
+            self.reg.write(tbl, rid, '_ins', env, prio, hlc, op['ci'] if boot and isinstance(op.get('ci'), list) else [env['ts'], env['actor'], env.get('actor_id') or ''])
         self.reg.write(tbl, rid, '_upd', env, prio, hlc, op['ui'] if boot and isinstance(op.get('ui'), list) else [env['ts'], env['actor']])
         changed = self.materialize(op['e'], rid)
         self.touched.add((op['e'], rid))
@@ -288,6 +288,7 @@ class BusinessFolder:
         else:
             vals.update(deleted=0, deleted_at=None, deleted_by=None, deleted_txn=None)
         vals.update(created_at=ins.value[0] if ins else None, created_by=ins.value[1] if ins else None,
+                    created_by_id=(ins.value[2] if ins and len(ins.value) > 2 else None),
                     updated_at=upd.value[0] if upd else None, updated_by=upd.value[1] if upd else None)
         cur = self.conn.execute(f'SELECT * FROM {tbl} WHERE id=?', (rid,)).fetchone()
         if cur is None:

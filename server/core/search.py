@@ -10,7 +10,7 @@ import threading
 from registry import ENTITIES, META
 from textnorm import norm_email, norm_text, phone_tokens
 
-SCHEMA = 2  # bump to force a rebuild when the index layout or the normalisation changes
+SCHEMA = 3  # bump to force a rebuild when the index layout or the normalisation changes
 
 
 class SearchIndex:
@@ -85,7 +85,7 @@ class SearchIndex:
             try:
                 for entity, rid in sorted(touched):
                     if entity in META and META[entity].search:
-                        r = store.conn.execute(f'SELECT created_by FROM {ENTITIES[entity][0]} WHERE id=?', (rid,)).fetchone()
+                        r = store.conn.execute(f'SELECT created_by_id FROM {ENTITIES[entity][0]} WHERE id=?', (rid,)).fetchone()
                         self._put(store, entity, rid, r[0] if r else None)
                 self.conn.execute('COMMIT')
             except Exception:
@@ -101,8 +101,8 @@ class SearchIndex:
                 for entity, m in META.items():
                     if not m.search:
                         continue
-                    for r in store.conn.execute(f'SELECT id, created_by FROM {m.table} WHERE deleted=0').fetchall():
-                        self._put(store, entity, r['id'], r['created_by'])
+                    for r in store.conn.execute(f'SELECT id, created_by_id FROM {m.table} WHERE deleted=0').fetchall():
+                        self._put(store, entity, r['id'], r['created_by_id'])
                 self.conn.execute("INSERT OR REPLACE INTO meta VALUES ('built', '1')")
                 self.conn.execute('COMMIT')
             except Exception:
@@ -130,7 +130,7 @@ class SearchIndex:
             args += list(access.get('scopes') or [])
         elif mode == 'own':
             where.append('d.created_by=?')
-            args.append(access.get('user'))
+            args.append(access.get('user_id'))
         sql = ('SELECT d.entity, d.rid, d.title, d.subtitle FROM fts JOIN docs d ON d.id = fts.rowid WHERE ' + ' AND '.join(where)
                + ' ORDER BY bm25(fts), d.title LIMIT ?')
         with self.lock:

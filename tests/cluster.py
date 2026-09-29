@@ -30,6 +30,7 @@ class Peer:
         self.name = name
 
     def commit(self, label, ops, **kw):
+        kw.setdefault('user_id', 'uid-' + self.name)
         return self.store.commit('user@' + self.name, '127.0.0.1', label, ops, **kw)
 
     def state(self):

@@ -11,7 +11,7 @@ registry.register(registry.Entity('deals', 'deals', 'Deals', [
     ('name', 'name', T, 'Name'), ('client', 'client', T, 'Client'), ('amount', 'amount_minor', I, 'Amount'), ('nid', 'nid', T, 'National id')],
     scope_field='client', money_fields=('amount',), sensitive_fields=('nid',)))
 
-ALL = {'mode': 'all', 'scopes': [], 'perms': {'money.view', 'data.sensitive'}, 'user': 'boss'}
+ALL = {'mode': 'all', 'scopes': [], 'perms': {'money.view', 'data.sensitive'}, 'user_id': 'boss-id'}
 
 
 class QueryTest(unittest.TestCase):
@@ -78,8 +78,9 @@ class QueryTest(unittest.TestCase):
         self.assertEqual(self.q({**ALL, 'mode': 'scopes', 'scopes': []})['total'], 0)
 
     def test_own_mode_only_returns_records_the_user_created(self):
-        self.assertEqual(self.q({**ALL, 'mode': 'own', 'user': 'someone else'})['total'], 0)
-        self.assertEqual(self.q({**ALL, 'mode': 'own', 'user': 'user@pc0'})['total'], 25)
+        self.assertEqual(self.q({**ALL, 'mode': 'own', 'user_id': 'someone-else'})['total'], 0)
+        self.assertEqual(self.q({**ALL, 'mode': 'own', 'user_id': 'uid-pc0'})['total'], 25)
+        self.assertEqual(self.q({**ALL, 'mode': 'own', 'user_id': ''})['total'], 0, 'an empty id never matches')
 
     def test_money_and_sensitive_fields_are_removed_without_permission(self):
         row = self.q({**ALL, 'perms': set()}, limit=1)['rows'][0]
