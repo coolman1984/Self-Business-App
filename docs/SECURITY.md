@@ -38,11 +38,12 @@ backups (contain everything, incl. password hashes) · the journal (history).
   3. **Data scope**: all records · records of my clients/projects · only records assigned to me.
   4. **Money visibility**: sees amounts or not (serializer masks money fields; reports hidden).
   5. **Admin rights** (never on a personal link): users, backups, restore, settings, devices, import, legal erasure.
-- Passwords: min length 10, blocklist of common passwords, no composition rules (NIST 800-63B style).
-  Hash per ADR-011: scrypt (N=2^17, r=8, p=1, 16-byte salt) or Argon2id (if the dependency is accepted); existing
-  PBKDF2-SHA256 600k hashes (engine compatibility) verified and re-hashed at next login. The password-proof key
-  derivation follows the same KDF with its own domain string. A benchmark gate in Phase 1 keeps login < 1 s on the
-  reference old laptop; if not, document the measured choice.
+- Passwords: min length 10 (setting), blocklist of common passwords, no composition rules (NIST 800-63B style).
+  **Implemented (Phase 1):** scrypt (N=2^17, r=8, p=1, 16-byte salt, standard library); PBKDF2-SHA256 hashes (BAMS style) still
+  verify and are replaced by a scrypt hash at the next login on the administrator PC. The password-proof key derivation uses
+  the same scrypt parameters with its own domain string (`SBO-ACCOUNT2`). Argon2id (`cryptography` ≥ 44) is deferred to Phase 11
+  (ADR-020). Open: benchmark on the reference old laptop (TASKS 1.16) — the target is a login under 1 s.
+  Test-only: `tests/engine_domain.py` lowers `auth.KDF_N`; no configuration or environment variable of the product can weaken it.
 - Forced password change for temporary passwords; admin reset tool on the PC itself (BAMS `reset-admin`).
 
 ## 4. Data protection by design
@@ -52,7 +53,13 @@ backups (contain everything, incl. password hashes) · the journal (history).
 - Sensitive fields (national id, licence keys, notes marked private) are masked in lists and exports unless the
   permission `data.sensitive` is given; licence keys stored as hash + last 4 characters.
 
-## 5. Legal erasure (separate, highly privileged)
+## 5. Legal erasure (separate, highly privileged) — implemented in Phase 1 (`tests/test_erase.py`)
+
+Implementation notes: the erase order is `kind: erase` (priority 4, authority-signed, refused from any other PC); it blanks
+fields (not whole records) so the record's other data and its relations stay. Erased fields cannot be entered again on the same
+record. Files in the content-addressed store and derived indexes: the search index re-indexes the touched record; file removal
+by hash is still to build with the file module (TASKS). The route `/api/erase` needs `privacy.erase`, access to all data, the
+user's own password, the typed word ERASE, and takes a backup first.
 
 "Never delete anything" is not lawful in every case (PDPL right to erasure, retention limits). Design (ADR-008):
 

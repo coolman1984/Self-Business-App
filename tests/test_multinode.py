@@ -128,7 +128,7 @@ class T00_DefinitionOfSuccess(Base):
         ali.login('ali', 'Tree-green42')
         mona.login('mona', 'Sky-blue7700')
         # 2. both keep working, including attachments
-        img = os.urandom(200_000)
+        img = b'\xff\xd8\xff\xe0' + os.urandom(200_000)  # a real JPEG start: uploads must match their type
         up = ali.call('POST', '/api/upload?name=canteen.jpg', raw=img, headers={'Content-Type': 'application/octet-stream'})
         ali.post('/api/commit', {'label': 'photo', 'ops': [{'e': 'photos', 'id': 'sp1', 'op': 'put', 'row': {'areaId': 'S1', 'src': up['src'], 'caption': 'New'}}]})
         move(ali, 'S1', 'chairs', -4)
@@ -549,7 +549,7 @@ class T19_Crashes(Base):
     def test_c_attachments(self):
         """22-23. Upload on one PC; the other shows a placeholder while the file is missing, continues an interrupted
         download from where it stopped (only the rest travels), verifies it by SHA-256 and never shows a partial file."""
-        data = os.urandom(900_000)
+        data = b'\xff\xd8\xff\xe0' + os.urandom(900_000)
         sha = hashlib.sha256(data).hexdigest()
         # the administrator PC cannot be reached by pc1 while the photo is added (its rows still arrive: the administrator
         # PC pushes them), so pc1 certainly has the record but not the file yet
@@ -586,7 +586,7 @@ class T19_Crashes(Base):
         """23. A damaged copy (wrong checksum) is thrown away and never shown."""
         import sys
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'server'))
-        data = os.urandom(50_000)
+        data = b'%PDF-1.4\n' + os.urandom(50_000)
         up = self.ac.call('POST', '/api/upload?name=doc.pdf', raw=data, headers={'Content-Type': 'application/octet-stream'})
         # damage the original on the administrator PC before pc1 fetches it
         self.unplug(0)
