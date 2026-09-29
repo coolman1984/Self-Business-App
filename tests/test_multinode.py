@@ -197,53 +197,6 @@ class T01_SingleNode(unittest.TestCase):
             s.cleanup()
 
 
-@unittest.skip('the BAMS version-1 upgrade path does not exist in this product; removed with the scenario in the next cleanup')
-class T02_Upgrade(unittest.TestCase):
-    def test_upgrade_v1_installation(self):
-        """2. An existing version-1 folder is upgraded in place: data, users, logs, uploads kept; verified backup first."""
-        from make_legacy import build
-        s = Server('upgraded')
-        counts = build(s.data_dir)
-        with sqlite3.connect(os.path.join(s.data_dir, 'sbo.db')) as db:
-            before = db.execute('SELECT id, name, status FROM areas ORDER BY id').fetchall()
-        s.start()
-        try:
-            c = s.client()
-            c.login('ayman', 'Secret-pass1')
-            st = c.get('/api/state')
-            self.assertEqual([(a['id'], a['name'], a['status']) for a in sorted(st['areas'], key=lambda a: a['id'])],
-                             [b for b in before if b[0] != 'ba05'])
-            self.assertEqual(len(st['areas']), counts['Break Areas'])
-            inv = {i['id']: i['qty'] for a in st['areas'] for i in a['inventory']}
-            self.assertEqual(inv['ba03:chairs'], 30)
-            self.assertEqual(c.get('/api/me')['node']['role'], 'authority')
-            users = {u['username'] for u in c.get('/api/users')['users']}
-            self.assertEqual(users, {'ayman', 'sara'})
-            sec = c.get('/api/security?limit=500')
-            self.assertTrue(any(r['event'] == 'login-failed' for r in sec['rows']))
-            audit = c.get('/api/audit?limit=500')
-            self.assertTrue(any(r['label'] == 'Delete break area 05' for r in audit['rows']))
-            self.assertTrue(any(b['name'].endswith('pre-upgrade.db') for b in c.get('/api/backups')))
-            trash = c.get('/api/trash')
-            self.assertEqual(trash[0]['label'], 'Delete break area 05')
-            photo = c.call('GET', '/files/2026-09/abc123.jpg')
-            self.assertTrue(photo.startswith(b'\xff\xd8'))
-            rep = c.post('/api/devices/verify', {'all': True})
-            self.assertTrue(rep['ok'], rep)
-            # second start: nothing is upgraded twice
-            fp = fingerprint(c)
-            s.stop()
-            s.start()
-            c = s.client()
-            c.login('sara', 'Other-pass2')
-            self.assertEqual(len(c.get('/api/state')['areas']), counts['Break Areas'])
-            c2 = s.client()
-            c2.login('ayman', 'Secret-pass1')
-            self.assertEqual(fingerprint(c2), fp)
-        finally:
-            s.cleanup()
-
-
 class T03_Cluster(Base):
     """3-10, 24-28: users, enrolment, initial and live sync, administrator PC away and back, security."""
 
@@ -973,10 +926,10 @@ class T34_InstalledMode(unittest.TestCase):
             st = wait_until(lambda: self._try(c), 30, what='installed program started')
             self.assertTrue(st['about']['installed'])
             self.assertTrue(st['about']['version'])
-            with open(os.path.join(root, 'js', 'app.js'), 'rb') as f:
+            with open(os.path.join(root, 'web', 'js', 'app.js'), 'rb') as f:
                 self.assertEqual(c.get('/js/app.js'), f.read())  # from inside the program
-            self.assertIn(b'Break Area', c.get('/'))
-            for bad in ('/js/../server/app.py', '/js/%2e%2e/server/app.py', '/css/../config.json', '/lib/../LICENSE.txt'):
+            self.assertIn(b'Self Business OS', c.get('/'))
+            for bad in ('/js/../server/app.py', '/js/%2e%2e/server/app.py', '/css/../config.json', '/css/../../LICENSE.txt'):
                 with self.assertRaises(ApiError) as e:
                     c.get(bad)
                 self.assertEqual(e.exception.code, 404, bad)

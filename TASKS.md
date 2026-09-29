@@ -20,12 +20,12 @@ allowed later; annual licence per activity; freelancer module first).
 - [x] 1.7 Query API: filters, sort, cursor pagination, data scopes, money/sensitive masking (`query.py`, `tests/test_query.py`)
 - [x] 1.8 Permission registry, data scopes on users, scrypt hashes + PBKDF2 compatibility (`tests/test_auth.py`)
 - [x] 1.9 Derived search index, Arabic + phone normalisers (`search.py`, `textnorm.py`, `tests/test_search.py`)
-- [~] 1.10 Backup: erase replay on restore (done in the router: `reapply_erasures`; restore skips erased fields) — needs a multi-process test
-- [~] 1.11 Router rewrite (`httpd.py`, `app.py`): written; multi-process suite ported (27/36 passed on the first run, fixes applied, **re-run pending**)
-- [~] 1.12 Layer test + log secret scanner: `tests/test_layers.py` written, **not yet run**; secret scanner test still to write
-- [~] 1.13 CI + Windows walking skeleton: `sbo_main.py`, `tools/*`, `installer/sbo.iss`, workflow written, **never built** — first CI run will tell; `T34_InstalledMode` must be rewritten for the new entry point
+- [x] 1.10 Backup: restore skips erased fields, erasures re-applied after restore (`test_erase`); multi-process backup scenarios green
+- [x] 1.11 Router (`httpd.py`, `app.py`, `sbo_main.py`): multi-process suite 35/35 scenarios green (the BAMS v1-upgrade scenario was removed)
+- [x] 1.12 Layer test (`test_layers.py`) and secrets-in-logs + upload-content tests (`test_secrets_in_logs.py`)
+- [~] 1.13 CI + Windows walking skeleton: scripts and workflow written, installed-mode test green on Linux with packed assets; **the Windows build (Nuitka + Inno Setup) has never run** — the first CI run will tell
 - [ ] 1.14 Independent review (distributed + security) → fix → regression tests → history
-- [ ] 1.15 Remove dead BAMS code (legacy user-key publish path, `T02_Upgrade` scenario, `make_legacy` references)
+- [ ] 1.15 Remove remaining dead BAMS code (legacy `pw_pub` publish path in `auth.login`)
 - [ ] 1.16 Benchmark scrypt on an old laptop; decide the final parameters (ADR-020)
 
 ## Test map
@@ -37,6 +37,6 @@ allowed later; annual licence per activity; freelancer module first).
 | passwords, permission registry | `tests/test_auth.py` | green (6) |
 | query API | `tests/test_query.py` | green (10) |
 | search, normalisers | `tests/test_search.py` | green (11) |
-| layers | `tests/test_layers.py` | written, not run |
-| several PCs, real processes | `tests/test_multinode.py` | 36 scenarios; fixes applied, re-run pending |
+| layers, secrets, uploads | `tests/test_layers.py`, `test_secrets_in_logs.py` | green (6) |
+| several PCs, real processes | `tests/test_multinode.py` | 35 scenarios, green (last full run: 34 + installed-mode fixed after) |
 | visual matrix | `tests/visual/` | Phase 2 |
