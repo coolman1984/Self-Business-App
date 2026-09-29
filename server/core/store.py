@@ -312,6 +312,10 @@ class Store:
                 raise BadRequest('Survey month is required (YYYY-MM)')
         vals = {col: _coerce(kind_, row.get(js)) for js, col, kind_, _ in fields}
         after = {'id': rid, **{js: _out(k, vals[col]) for js, col, k, _ in fields if vals[col] is not None}}
+        if self.journal is not None:
+            gone = [f for f in self.journal.erased_fields(entity, rid) if after.get(f) is not None]
+            if gone:
+                raise BadRequest('This information was erased by a privacy request and cannot be entered again on the same record')
         scope = self._scope_of(entity, after)
         if before:
             b = {k: v for k, v in before.items() if k != 'ver'}
@@ -406,8 +410,9 @@ class Store:
                         for r in src.execute(f'SELECT * FROM {table}'):
                             if not ('deleted' in cols and r['deleted']):
                                 d = {'id': r['id']}
+                                erased = self.journal.erased_fields(e, r['id']) if self.journal else set()
                                 for js, col, ftype, _ in fields:
-                                    v = _out(ftype, r[col]) if col in cols else None
+                                    v = _out(ftype, r[col]) if col in cols and js not in erased else None
                                     if v is not None:
                                         d[js] = v
                                 backup[r['id']] = d
@@ -422,6 +427,27 @@ class Store:
         if not ops:
             return {'txn': None, 'changes': 0, 'version': self.version()}
         return self.commit(user, ip, label, ops, force=True, user_id=user_id, kind=kind)
+
+    def erase(self, actor, ip, entity, rid, fields, reason, basis='', ref='', actor_id=''):
+        """Legal erasure of the listed fields of one record (docs/SECURITY.md section 5). Only the administrator PC can sign it;
+        the caller must already have checked the privacy.erase permission and the confirmation. The order itself carries no
+        personal data: record id, field names, reason code, legal basis and request reference."""
+        if entity not in ENTITIES:
+            raise BadRequest('Unknown kind of record')
+        names = {js for js, _, _, _ in ENTITIES[entity][2]}
+        fields = sorted(set(fields or []))
+        if not fields or any(f not in names for f in fields):
+            raise BadRequest('Choose the information to erase')
+        if not self.journal.node.is_authority:
+            raise BadRequest('An erase order can only be made on the administrator PC')
+        if not str(reason or '').strip():
+            raise BadRequest('A reason is required')
+        with self.lock:
+            op = {'e': entity, 'id': rid, 'op': 'update', 's': {f: None for f in fields}, 'sc': None,
+                  'erase': {'reason': str(reason)[:40], 'basis': str(basis or '')[:200], 'ref': str(ref or '')[:80]}}
+            rec = self.journal.write('erase', [op], actor=actor, actor_id=actor_id, ip=ip, label='Legal erasure', authority=True)
+            self.fold_pending()
+        return {'txn': rec['env']['id']}
 
     def mark_initialized(self):
         with self.lock:

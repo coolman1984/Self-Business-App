@@ -60,6 +60,7 @@ class System:
         self.journal = Journal(self.data_dir, self.node, REPLICATED, log=self.log)
         self.store.attach(self.journal)
         self.auth.attach(self.journal, self.node)
+        self.journal.reapply_erasures()
 
     def _check_rollback(self):
         """If this PC's own history in journal.db is shorter than what it once wrote, the journal was restored

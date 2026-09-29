@@ -30,11 +30,11 @@ from datetime import datetime
 import ed25519
 
 ZERO = '0' * 64
-VERSION = 1   # envelope format
+VERSION = 2   # envelope format (2: the signed body carries ops_hash; the operations travel and are stored beside it)
 SCHEMA = 3    # data model (3: personal links, profiles); a change made by a newer program version waits until this PC is updated
 DATA_KINDS = ('data', 'restore', 'bootstrap')
-KINDS = DATA_KINDS + ('admin', 'account', 'log')
-PRIORITY = {'restore': 0, 'data': 1, 'bootstrap': 1, 'account': 2, 'admin': 3}
+KINDS = DATA_KINDS + ('admin', 'account', 'log', 'erase')
+PRIORITY = {'restore': 0, 'data': 1, 'bootstrap': 1, 'account': 2, 'admin': 3, 'erase': 4}
 ACCOUNT_FIELDS = {'pw_hash', 'pw_pub', 'must_change', 'pw_changed_at'}
 MAX_DELTA = 10 ** 9
 ADMIN_ENTITIES = {'users', 'nodes', 'userCommands', 'profiles'}
@@ -51,6 +51,47 @@ def canonical(obj):
 
 def chash(body):
     return hashlib.sha256(b'SBO-CS1\n' + body.encode('utf-8')).hexdigest()
+
+
+def signed_view(env):
+    """What the signature covers: the whole envelope except the operations, which are represented by ops_hash. The
+    operations of a change can therefore be replaced by a redacted copy (legal erasure) without breaking the hash chain
+    or any signature."""
+    return {k: v for k, v in env.items() if k != 'ops'}
+
+
+def ops_digest(ops):
+    return hashlib.sha256(canonical(ops).encode('utf-8')).hexdigest()
+
+
+def env_chash(env):
+    return chash(canonical(signed_view(env)))
+
+
+def redact_ops(ops, targets):
+    """Blanks the listed fields of the listed records inside operations. targets: {(entity, id): {js field, ...}}.
+    Returns True when something changed."""
+    changed = False
+    for op in ops:
+        if not isinstance(op, dict):
+            continue
+        fields = targets.get((op.get('e'), op.get('id')))
+        if not fields:
+            continue
+        for key in ('s', 'b', 'r'):
+            d = op.get(key)
+            if isinstance(d, dict):
+                for f in fields:
+                    if f in d and d[f] is not None:
+                        d[f] = None
+                        changed = True
+        c = op.get('c')
+        if isinstance(c, dict):
+            for f in fields:
+                if f in c and c[f] != [None, None]:
+                    c[f] = [None, None]
+                    changed = True
+    return changed
 
 
 def dominates(deps, origin, cseq, e_origin, e_cseq):
@@ -147,7 +188,11 @@ class Journal:
                 id TEXT PRIMARY KEY, invite_id TEXT, node_id TEXT, name TEXT, pub TEXT, cert_fp TEXT, address TEXT, ip TEXT,
                 confirm TEXT, status TEXT, created_at TEXT, decided_at TEXT, decided_by TEXT, secret TEXT);
             CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+            CREATE TABLE IF NOT EXISTS erased (entity TEXT NOT NULL, rid TEXT NOT NULL, field TEXT NOT NULL, order_id TEXT, ts TEXT,
+                PRIMARY KEY (entity, rid, field));
         ''')
+        if 'redacted' not in {r[1] for r in self.conn.execute('PRAGMA table_info(changes)')}:
+            self.conn.execute('ALTER TABLE changes ADD COLUMN redacted TEXT')
         cols = {r[1] for r in self.conn.execute('PRAGMA table_info(nodes)')}
         if 'revoked_change' not in cols:
             self.conn.execute('ALTER TABLE nodes ADD COLUMN revoked_change TEXT')
@@ -235,9 +280,11 @@ class Journal:
         env = {'v': VERSION, 'schema': SCHEMA, 'id': uuid.uuid4().hex, 'origin': origin, 'node': self.node.id, 'cseq': cseq + 1,
                'hlc': self.clock.now(), 'deps': deps, 'kind': kind, 'ts': ts or now(), 'actor': str(actor or '')[:120],
                'actor_id': str(actor_id or ''), 'ip': str(ip or '')[:60], 'label': str(label or '')[:200], 'ops': ops, 'prev': prev}
+        env = json.loads(canonical(env))
+        env['ops_hash'] = ops_digest(env['ops'])
         body = canonical(env)
-        h = chash(body)
-        rec = {'env': json.loads(body), 'body': body, 'hash': h, 'sig': self.node.sign(bytes.fromhex(h)).hex(),
+        h = env_chash(env)
+        rec = {'env': env, 'body': body, 'hash': h, 'redacted': None, 'sig': self.node.sign(bytes.fromhex(h)).hex(),
                'asig': self.node.sign_authority(bytes.fromhex(h)).hex() if authority else None, 'status': 'ok', 'note': None}
         return rec
 
@@ -305,10 +352,12 @@ class Journal:
             try:
                 for r in recs:
                     env = r['env']
-                    cur = c.execute('INSERT INTO changes (origin,cseq,id,node,hlc,kind,body,hash,sig,asig,status,note,received_at,via) '
-                                    'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    if env['kind'] != 'erase' and self._redact_incoming(c, r):
+                        r['redacted'] = r.get('redacted') or 'erase-order'
+                    cur = c.execute('INSERT INTO changes (origin,cseq,id,node,hlc,kind,body,hash,sig,asig,status,note,received_at,via,redacted) '
+                                    'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                                     (env['origin'], env['cseq'], env['id'], env['node'], env['hlc'], env['kind'], r['body'], r['hash'],
-                                     r['sig'], r['asig'], r['status'], r['note'], ts, via))
+                                     r['sig'], r['asig'], r['status'], r['note'], ts, via, r.get('redacted')))
                     lsn = cur.lastrowid
                     c.execute('INSERT OR REPLACE INTO heads VALUES (?,?,?,?)', (env['origin'], env['node'], env['cseq'], r['hash']))
                     for table, row in self.view_rows(env, r['status']):
@@ -316,6 +365,8 @@ class Journal:
                         c.execute(f'INSERT INTO {table} (lsn,{",".join(cols)}) VALUES (?,{",".join("?" * len(cols))})', (lsn, *row.values()))
                     if r['status'] == 'ok' and env['kind'] == 'admin':
                         self._fold_roster(c, env)
+                    if r['status'] == 'ok' and env['kind'] == 'erase':
+                        self._register_erase(c, env)
                 c.execute('COMMIT')
             except Exception:
                 c.execute('ROLLBACK')
@@ -324,6 +375,72 @@ class Journal:
             for r in recs:
                 env = r['env']
                 self.heads[env['origin']] = (env['cseq'], r['hash'], env['node'])
+
+    # ------------------------------------------------------------ legal erasure (see docs/SECURITY.md section 5)
+    def _register_erase(self, c, env):
+        """An erase order was accepted: remember what is erased and blank it in the stored history and the log views."""
+        targets = {}
+        for op in env['ops']:
+            for f in (op.get('s') or {}):
+                c.execute('INSERT OR REPLACE INTO erased VALUES (?,?,?,?,?)', (op['e'], op['id'], f, env['id'], env['ts']))
+                targets.setdefault((op['e'], op['id']), set()).add(f)
+        self._redact_stored(c, targets)
+
+    def _redact_stored(self, c, targets):
+        """Blanks the fields in every stored change that mentions the records, and rebuilds their audit rows."""
+        if not targets:
+            return 0
+        n = 0
+        for (entity, rid) in targets:
+            like = '%' + json.dumps(rid, ensure_ascii=False)[1:-1].replace('%', '').replace('_', '') + '%'
+            for row in c.execute('SELECT lsn, body, status, redacted FROM changes WHERE kind!=\'erase\' AND body LIKE ?', (like,)).fetchall():
+                env = json.loads(row['body'])
+                if redact_ops(env['ops'], {(entity, rid): targets[(entity, rid)]}):
+                    c.execute('UPDATE changes SET body=?, redacted=COALESCE(redacted, ?) WHERE lsn=?', (canonical(env), 'erase-order', row['lsn']))
+                    c.execute('DELETE FROM audit WHERE lsn=?', (row['lsn'],))
+                    for table, vrow in self.view_rows(env, row['status']):
+                        if table == 'audit':
+                            cols = list(vrow)
+                            c.execute(f'INSERT INTO audit (lsn,{",".join(cols)}) VALUES (?,{",".join("?" * len(cols))})', (row['lsn'], *vrow.values()))
+                    n += 1
+        return n
+
+    def _redact_incoming(self, c, r):
+        """A change that arrives after an erase order must not bring the erased values back."""
+        env = r['env']
+        if env['kind'] in ('log', 'admin', 'account'):
+            return False
+        ids = {op.get('id') for op in env['ops'] if isinstance(op, dict)}
+        if not ids:
+            return False
+        marks = ','.join('?' * len(ids))
+        targets = {}
+        for row in c.execute(f'SELECT entity, rid, field FROM erased WHERE rid IN ({marks})', list(ids)):
+            targets.setdefault((row['entity'], row['rid']), set()).add(row['field'])
+        if targets and redact_ops(env['ops'], targets):
+            r['body'] = canonical(env)
+            return True
+        return False
+
+    def erased_fields(self, entity, rid):
+        with self.lock:
+            return {r[0] for r in self.conn.execute('SELECT field FROM erased WHERE entity=? AND rid=?', (entity, rid))}
+
+    def reapply_erasures(self):
+        """Idempotent: blanks anything the erase orders cover that is still readable (after a journal or backup restore)."""
+        with self.lock:
+            targets = {}
+            for row in self.conn.execute('SELECT entity, rid, field FROM erased'):
+                targets.setdefault((row['entity'], row['rid']), set()).add(row['field'])
+            c = self.conn
+            c.execute('BEGIN IMMEDIATE')
+            try:
+                n = self._redact_stored(c, targets)
+                c.execute('COMMIT')
+            except Exception:
+                c.execute('ROLLBACK')
+                raise
+            return n
 
     @staticmethod
     def _fold_roster(c, env):
@@ -407,10 +524,17 @@ class Journal:
             pending = []
             for raw in records:
                 try:
-                    body = raw['b']
-                    env = json.loads(body)
-                    if canonical(env) != body:
+                    sbody = raw['b']
+                    env = json.loads(sbody)
+                    if canonical(env) != sbody:
                         raise ValueError('not in canonical form')
+                    ops = json.loads(raw['o'])
+                    if not isinstance(ops, list) or canonical(ops) != raw['o']:
+                        raise ValueError('operations not in canonical form')
+                    if not raw.get('x') and ops_digest(ops) != env.get('ops_hash'):
+                        raise ValueError('operations do not match the signed hash')
+                    env['ops'] = ops
+                    body = canonical(env)
                     origin, cseq, node = env['origin'], env['cseq'], env['node']
                     if not isinstance(origin, str) or not isinstance(cseq, int) or not isinstance(node, str) or not origin.startswith(node + '-'):
                         raise ValueError('bad origin')
@@ -421,7 +545,7 @@ class Journal:
                     problems.append(f'unreadable change from {via}: {e}')
                     self.alert('bad-data', f'Unreadable change received from {via}: {e}', via)
                     break
-                pending.append((raw, env, body, chash(body)))
+                pending.append((raw, env, body, chash(sbody)))
             # several passes, so changes that arrive in any order within one delivery are still taken in the right order
             progress = True
             while progress and pending:
@@ -504,7 +628,7 @@ class Journal:
                     break
         if status != 'ok':
             self.alert('rejected', f'A change from PC {n.get("name") or node} was refused: {status}', node)
-        accepted.append({'env': env, 'body': body, 'hash': h, 'sig': raw.get('s'), 'asig': raw.get('a'),
+        accepted.append({'env': env, 'body': body, 'hash': h, 'sig': raw.get('s'), 'asig': raw.get('a'), 'redacted': 'erase-order' if raw.get('x') else None,
                          'status': 'ok' if status == 'ok' else 'rejected', 'note': None if status == 'ok' else status})
         heads[origin] = (cseq, h)
         batch_hash[(origin, cseq)] = h
@@ -531,7 +655,13 @@ class Journal:
                 or not all(isinstance(env.get(k), str) for k in ('id', 'ts', 'actor', 'actor_id', 'ip', 'label', 'prev'))
                 or not all(isinstance(op, dict) for op in ops)):
             return 'malformed change'
-        if kind == 'admin':
+        if kind == 'erase':
+            for op in ops:
+                if (op.get('e') not in self.business or not isinstance(op.get('id'), str) or not op['id'] or not isinstance(op.get('s'), dict)
+                        or not op['s'] or any(v is not None for v in op['s'].values()) or not isinstance(op.get('erase'), dict)
+                        or not isinstance(op['erase'].get('reason'), str)):
+                    return 'malformed erase order'
+        if kind in ('admin', 'erase'):
             pub = self.node.authority_pub
             if not pub or not raw.get('a') or not ed25519.verify(pub, bytes.fromhex(h), _unhex(raw['a'])):
                 return 'not signed by the administrator PC'
@@ -614,12 +744,15 @@ class Journal:
             if start is None:
                 return [], False
             out, size = [], 0
-            for r in self.conn.execute('SELECT origin, cseq, body, sig, asig FROM changes WHERE lsn>=? ORDER BY lsn', (start,)):
+            for r in self.conn.execute('SELECT origin, cseq, body, sig, asig, redacted FROM changes WHERE lsn>=? ORDER BY lsn', (start,)):
                 if r['origin'] not in need or r['cseq'] <= need[r['origin']]:
                     continue
-                rec = {'b': r['body'], 's': r['sig']}
+                env = json.loads(r['body'])
+                rec = {'b': canonical(signed_view(env)), 'o': canonical(env['ops']), 's': r['sig']}
                 if r['asig']:
                     rec['a'] = r['asig']
+                if r['redacted']:
+                    rec['x'] = 1
                 if out and (size + len(r['body']) > max_bytes or len(out) >= max_count):
                     return out, True
                 out.append(rec)
@@ -705,8 +838,12 @@ class Journal:
                     except ValueError:
                         problems.append(f'{where}: unreadable')
                         continue
-                    if chash(r['body']) != r['hash']:
+                    if env_chash(env) != r['hash']:
                         problems.append(f'{where}: content was changed after it was saved')
+                    if not r['redacted'] and ops_digest(env.get('ops')) != env.get('ops_hash'):
+                        problems.append(f'{where}: operations were changed after they were saved')
+                    if r['redacted'] and not self.conn.execute('SELECT 1 FROM erased LIMIT 1').fetchone():
+                        problems.append(f'{where}: operations were erased without an erase order')
                     if env.get('prev') != prev or env.get('origin') != o or env.get('cseq') != r['cseq']:
                         problems.append(f'{where}: chain broken')
                     prev = r['hash']
@@ -714,7 +851,7 @@ class Journal:
                     n = roster.get(r['node'])
                     if all_signatures and n and n.get('pub') and not ed25519.verify(bytes.fromhex(n['pub']), bytes.fromhex(r['hash']), bytes.fromhex(r['sig'])):
                         problems.append(f'{where}: invalid signature')
-                    if r['kind'] == 'admin' and r['status'] == 'ok':
+                    if r['kind'] in ('admin', 'erase') and r['status'] == 'ok':
                         pub = self.node.authority_pub
                         if not pub or not r['asig'] or not ed25519.verify(pub, bytes.fromhex(r['hash']), bytes.fromhex(r['asig'])):
                             problems.append(f'{where}: administrator signature invalid')
@@ -815,7 +952,7 @@ def password_proof_message(uid, pw_hash, pw_pub, frm):
 
 
 def env_hash(env):
-    return chash(canonical(env))
+    return env_chash(env)
 
 
 def _unhex(s):

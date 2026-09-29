@@ -10,7 +10,7 @@ from cluster import Cluster, Peer, enroll_op  # noqa: F401 (sets sys.path)
 import engine_domain  # noqa: E402
 import ed25519  # noqa: E402
 import tlscert  # noqa: E402
-from journal import canonical, chash  # noqa: E402
+from journal import canonical, chash, env_chash, signed_view  # noqa: E402
 from node import Node  # noqa: E402
 from store import Conflict  # noqa: E402
 
@@ -165,9 +165,8 @@ class JournalRulesTest(unittest.TestCase):
         env = dict(rec['env'])
         env['cseq'] = cseq
         env['prev'] = self.b.journal.hash_at(self.b.node.replica, cseq - 1) if cseq > 1 else '0' * 64
-        body = canonical(env)
-        h2 = chash(body)
-        forged = {'b': body, 's': self.b.node.sign(bytes.fromhex(h2)).hex()}
+        h2 = env_chash(env)
+        forged = {'b': canonical(signed_view(env)), 'o': canonical(env['ops']), 's': self.b.node.sign(bytes.fromhex(h2)).hex()}
         self.a.receive([forged])
         self.assertTrue(any(al['kind'] == 'fork' for al in self.a.journal.alerts()))
 

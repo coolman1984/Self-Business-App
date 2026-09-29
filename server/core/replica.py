@@ -208,6 +208,9 @@ class BusinessFolder:
             raise ValueError('bad record id')
         tbl = spec['table']
         prio = PRIORITY[env['kind']]
+        if env['kind'] == 'erase':  # an erase order removes every stored value of the fields, then blanks them at the highest priority
+            for js in sorted(op.get('s') or {}):
+                self.conn.execute('DELETE FROM sync_field WHERE tbl=? AND rid=? AND fld=?', (tbl, rid, js))
         hlc = op['t'] if env['kind'] == 'bootstrap' and isinstance(op.get('t'), int) else env['hlc']
         names = {js for js, _, _ in spec['fields']}
         sets = op.get('s') or {}
