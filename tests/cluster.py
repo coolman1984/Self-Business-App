@@ -10,7 +10,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'server', 'core'))
 
 from journal import Journal  # noqa: E402
 from node import Node  # noqa: E402
+import engine_domain  # noqa: E402
 from store import ENTITIES, Store  # noqa: E402
+
+engine_domain.register()
 
 
 class Peer:
@@ -27,7 +30,7 @@ class Peer:
         return self.store.commit('user@' + self.name, '127.0.0.1', label, ops, **kw)
 
     def state(self):
-        return self.store.state()
+        return engine_domain.nested_state(self.store)
 
     def receive(self, records, via='test'):
         acc, deferred, problems = self.journal.receive(records, via)

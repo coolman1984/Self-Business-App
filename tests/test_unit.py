@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from cluster import Cluster, Peer, enroll_op  # noqa: F401 (sets sys.path)
+import engine_domain  # noqa: E402
 import ed25519  # noqa: E402
 import tlscert  # noqa: E402
 from journal import canonical, chash  # noqa: E402
@@ -376,7 +377,7 @@ class NodeSafetyTest(unittest.TestCase):
             self.assertNotEqual(s.node.replica, replica)
             self.assertTrue(any(a['kind'] == 'rollback' for a in s.journal.alerts()))
             # 'b' was only in the tables, not in the restored journal: it is kept and saved again as a new change
-            self.assertIn('b', {a['id'] for a in s.store.state()['areas']})
+            self.assertIn('b', {a['id'] for a in engine_domain.nested_state(s.store)['areas']})
             self.assertTrue(any('"b"' in r[0] for r in s.journal.conn.execute("SELECT body FROM changes WHERE kind='data'")))
             s.store.commit('u', 'ip', 'c', [{'e': 'areas', 'id': 'c', 'op': 'put', 'row': {'name': 'c'}}])
             self.assertTrue(s.journal.verify(True)['ok'])
@@ -403,7 +404,7 @@ class ToolsTest(unittest.TestCase):
             sys_.close()
             cfg = os.path.join(d, 'config.json')
             json.dump({'data_dir': data, 'backup_dir': os.path.join(d, 'bk')}, open(cfg, 'w'))
-            env = dict(os.environ, SBO_CONFIG=cfg)
+            env = dict(os.environ, SBO_CONFIG=cfg, SBO_ENTITY_MODULES='engine_domain', PYTHONPATH=os.path.dirname(os.path.abspath(__file__)))
             tool = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'server', 'core', 'nodectl.py')
             fp1 = subprocess.run([sys.executable, tool, 'status'], env=env, capture_output=True, text=True).stdout.split('fingerprint:')[1].strip()
             out = subprocess.run([sys.executable, tool, 'rebuild'], env=env, capture_output=True, text=True)

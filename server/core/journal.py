@@ -121,10 +121,10 @@ class Journal:
                 revoked_change TEXT);
             CREATE TABLE IF NOT EXISTS audit (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, lsn INTEGER, origin TEXT, cseq INTEGER, node TEXT, kind TEXT, ts TEXT,
-                txn TEXT, user TEXT, user_id TEXT, ip TEXT, label TEXT, entity TEXT, entity_id TEXT, area_id TEXT, op TEXT,
+                txn TEXT, user TEXT, user_id TEXT, ip TEXT, label TEXT, entity TEXT, entity_id TEXT, scope_id TEXT, op TEXT,
                 changes TEXT, before TEXT, after TEXT);
             CREATE INDEX IF NOT EXISTS ix_audit_ts ON audit(ts);
-            CREATE INDEX IF NOT EXISTS ix_audit_area ON audit(area_id);
+            CREATE INDEX IF NOT EXISTS ix_audit_scope ON audit(scope_id);
             CREATE INDEX IF NOT EXISTS ix_audit_oc ON audit(origin, cseq);
             CREATE TABLE IF NOT EXISTS activity (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, lsn INTEGER, origin TEXT, cseq INTEGER, node TEXT, ts TEXT, user TEXT,
@@ -380,7 +380,7 @@ class Journal:
                     out.append(('activity', {**base, **{k: e.get(k) for k in ('ts', 'user', 'ip', 'type', 'action', 'target', 'page', 'detail')}}))
                 elif e.get('t') == 'audit':  # data changes saved before the upgrade to the multi-PC version
                     out.append(('audit', {**base, 'kind': 'imported', **{k: e.get(k) for k in (
-                        'ts', 'txn', 'user', 'ip', 'label', 'entity', 'entity_id', 'area_id', 'op', 'changes', 'before', 'after')}, 'user_id': ''}))
+                        'ts', 'txn', 'user', 'ip', 'label', 'entity', 'entity_id', 'scope_id', 'op', 'changes', 'before', 'after')}, 'user_id': ''}))
             return out
         for op in env['ops']:
             if not isinstance(op, dict) or op.get('noaudit'):
@@ -389,7 +389,7 @@ class Journal:
             kind = op.get('op') or 'update'
             out.append(('audit', {**base, 'kind': env['kind'], 'ts': env['ts'], 'txn': env['id'], 'user': env['actor'],
                                   'user_id': env['actor_id'], 'ip': env['ip'], 'label': env['label'], 'entity': op.get('e'),
-                                  'entity_id': op.get('id'), 'area_id': op.get('a'), 'op': kind,
+                                  'entity_id': op.get('id'), 'scope_id': op.get('sc'), 'op': kind,
                                   'changes': canonical(red(op.get('c') or {})),
                                   'before': canonical(red(op['b'])) if op.get('b') else None,
                                   'after': canonical(red(op['r'])) if op.get('r') else None}))
@@ -754,15 +754,15 @@ class Journal:
         return out
 
     # ------------------------------------------------------------ log queries (monitoring)
-    def query(self, table, q='', user='', typ='', area='', frm='', to='', node='', limit=200, offset=0, areas=None, business_only=False):
+    def query(self, table, q='', user='', typ='', scope='', frm='', to='', node='', limit=200, offset=0, scopes=None, business_only=False):
         cols = {'audit': ['label', 'entity', 'entity_id', 'changes', 'before', 'after'], 'activity': ['action', 'target', 'page', 'detail'],
                 'security': ['target', 'detail', 'user']}[table]
         where, args = [], []
         if business_only and table == 'audit':  # user accounts and PCs are for administrators only
             where.append("entity NOT IN ('users', 'nodes', 'userCommands', 'profiles')")
-        if areas is not None and table == 'audit':
-            where.append(f'area_id IN ({",".join("?" * len(areas)) or "NULL"})')
-            args += list(areas)
+        if scopes is not None and table == 'audit':
+            where.append(f'scope_id IN ({",".join("?" * len(scopes)) or "NULL"})')
+            args += list(scopes)
         if q:
             where.append('(' + ' OR '.join(f'{c} LIKE ?' for c in cols) + ')')
             args += [f'%{q}%'] * len(cols)
@@ -770,8 +770,8 @@ class Journal:
             where.append('user=?'); args.append(user)
         if typ:
             where.append({'audit': 'op', 'activity': 'type', 'security': 'event'}[table] + '=?'); args.append(typ)
-        if area and table == 'audit':
-            where.append('area_id=?'); args.append(area)
+        if scope and table == 'audit':
+            where.append('scope_id=?'); args.append(scope)
         if node:
             where.append('node=?'); args.append(node)
         if frm:

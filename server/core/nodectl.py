@@ -40,8 +40,17 @@ def load_cfg():
     return cfg, data, os.path.join(data, 'uploads'), res(cfg.get('backup_dir', 'backups')), [res(d) for d in cfg.get('extra_backup_dirs', [])]
 
 
+def load_domains():
+    """Registers the entities of the platform and the modules. SBO_ENTITY_MODULES (comma separated module names, each with
+    a register() function) is used by tests; the product registers its own platform here."""
+    import importlib
+    for name in filter(None, os.environ.get('SBO_ENTITY_MODULES', '').split(',')):
+        importlib.import_module(name.strip()).register()
+
+
 def open_system():
     from system import System
+    load_domains()
     cfg, data, uploads, backups, extra = load_cfg()
     return System(data, cfg, uploads, backups, extra, log=print)
 
@@ -101,19 +110,11 @@ def cmd_rebuild():
     cfg, data, uploads, backups, extra = load_cfg()
     stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     old = os.path.join(data, 'sbo.db')
-    legacy = []
     if os.path.exists(old):
-        try:  # keep labels of recycle-bin groups made before the upgrade
-            with sqlite3.connect(old) as db:
-                legacy = db.execute('SELECT * FROM transactions').fetchall()
-        except sqlite3.Error:
-            pass
         for suffix in ('', '-wal', '-shm'):
             if os.path.exists(old + suffix):
                 os.replace(old + suffix, os.path.join(data, f'sbo.broken-{stamp}.db{suffix}'))
     s = open_system()
-    with s.store.lock:
-        s.store.conn.executemany('INSERT OR IGNORE INTO transactions VALUES (?,?,?,?,?,?)', legacy)
     s.store.mark_initialized()
     print(f'Rebuilt data/sbo.db from the history: {s.store.counts()}')
     print('The previous file was kept as sbo.broken-' + stamp + '.db')

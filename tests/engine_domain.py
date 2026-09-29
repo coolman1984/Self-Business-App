@@ -9,6 +9,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'server', 'core'))
+import registry  # noqa: E402
 import store  # noqa: E402
 from store import B, I, J, R, T  # noqa: E402,F401
 
@@ -64,16 +65,16 @@ LEGACY_RESOLVERS = {
 AREA_CHILDREN = ['inventory', 'photos', 'docs', 'issues', 'maintenance', 'inspections', 'surveys']
 
 
+SCOPE = {'areas': dict(scope_self=True), 'inventory': dict(scope_field='areaId'), 'surveys': dict(scope_field='areaId', dup_keys=['areaId', 'month', 'department']),
+         'photos': dict(scope_field='areaId', file_fields=('src', 'thumb')), 'docs': dict(scope_field='areaId', file_fields=('src',)),
+         'issues': dict(scope_field='areaId'), 'issueLog': dict(scope_via=('issueId', 'issues')), 'maintenance': dict(scope_field='areaId'),
+         'inspections': dict(scope_field='areaId'), 'history': dict(scope_field='areaId')}
+
+
 def register():
     for e, (t, title, f) in LEGACY.items():
-        if e in store.ENTITIES:
-            continue
-        store.ENTITIES[e] = (t, title, f)
-        store.COUNTERS[e] = LEGACY_COUNTERS.get(e, set())
-        store.RESOLVERS[e] = LEGACY_RESOLVERS.get(e, {})
-        store.SPECS[e] = {'table': t, 'fields': [(js, col, kind) for js, col, kind, _ in f], 'counters': store.COUNTERS[e],
-                          'resolvers': store.RESOLVERS[e]}
-        store.REPLICATED.add(e)
+        registry.register(registry.Entity(e, t, title, f, counters=LEGACY_COUNTERS.get(e, set()), resolvers=LEGACY_RESOLVERS.get(e, {}),
+                                          **SCOPE.get(e, {})))
 
 
 def nested_state(st):
