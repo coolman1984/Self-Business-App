@@ -1,0 +1,9 @@
+# Business data, backups, keys and logs stay on the PC - never in git (the repository is public)
+data/
+backups/
+samples/private/
+__pycache__/
+*.pyc
+build/
+dist/
+tests/visual/output/
