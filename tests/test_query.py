@@ -89,6 +89,14 @@ class QueryTest(unittest.TestCase):
         self.assertIn('amount', row)
         self.assertNotIn('nid', row)
 
+    def test_hidden_fields_cannot_be_used_to_probe_values(self):
+        no_money = {**ALL, 'perms': set()}
+        for kw in ({'filters': [('amount', 'gte', 300)]}, {'sort': 'amount'}, {'filters': [('nid', 'like', 'NID1')]}):
+            with self.assertRaises(query.QueryError):
+                self.q(no_money, **kw)
+        self.assertEqual(self.q(no_money, search='NID1')['total'], 0, 'free-text search does not look into sensitive fields')
+        self.assertGreater(self.q(ALL, search='Deal')['total'], 0)
+
     def test_bad_cursor_is_refused(self):
         with self.assertRaises(query.QueryError):
             self.q(cursor='not-a-cursor')

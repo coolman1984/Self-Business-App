@@ -60,8 +60,75 @@ def signed_view(env):
     return {k: v for k, v in env.items() if k != 'ops'}
 
 
+VALUE_KEYS = ('s', 'r', 'b', 'c')  # the dictionaries of an operation that hold record values (and can therefore be erased)
+
+
+def commit_value(nonce, value):
+    """Salted commitment to one value. The signature covers the commitments, never the values: after an erase order the value and
+    its nonce are gone, the commitment reveals nothing, and every value that is still there can be checked against it."""
+    return hashlib.sha256((nonce + '|' + canonical(value)).encode('utf-8')).hexdigest()
+
+
+def seal_ops(ops):
+    """Adds to every operation the commitments (cm, signed) and their nonces (nz, not signed) of all its values."""
+    for op in ops:
+        if not isinstance(op, dict) or 'e' not in op:
+            continue
+        cm, nz = {}, {}
+        for key in VALUE_KEYS:
+            d = op.get(key)
+            if isinstance(d, dict):
+                for f, v in d.items():
+                    n = uuid.uuid4().hex
+                    nz[f'{key}.{f}'], cm[f'{key}.{f}'] = n, commit_value(n, v)
+        if cm:
+            op['cm'], op['nz'] = cm, nz
+
+
+def stripped_ops(ops):
+    """The operations without values and nonces: what ops_hash covers (record ids, kinds, counters, stamps, commitments)."""
+    return [{k: v for k, v in op.items() if k not in VALUE_KEYS and k != 'nz'} if isinstance(op, dict) else op for op in ops]
+
+
 def ops_digest(ops):
-    return hashlib.sha256(canonical(ops).encode('utf-8')).hexdigest()
+    return hashlib.sha256(canonical(stripped_ops(ops)).encode('utf-8')).hexdigest()
+
+
+def check_ops(env):
+    """Verifies received or stored operations against the signed ops_hash and the commitments.
+    Returns (ok, blanks): blanks are the (entity, id, field) whose value is missing although it was committed to - legitimate only
+    when an erase order covers them (checked by verify() and on arrival)."""
+    ops = env.get('ops')
+    if not isinstance(ops, list) or ops_digest(ops) != env.get('ops_hash'):
+        return False, []
+    blanks = []
+    for op in ops:
+        if not isinstance(op, dict) or 'cm' not in op:
+            continue
+        cm, nz = op.get('cm'), op.get('nz') or {}
+        if not isinstance(cm, dict) or not isinstance(nz, dict):
+            return False, []
+        seen = set()
+        for key in VALUE_KEYS:
+            d = op.get(key)
+            if not isinstance(d, dict):
+                continue
+            for f, v in d.items():
+                path = f'{key}.{f}'
+                seen.add(path)
+                h = cm.get(path)
+                if h is None:
+                    return False, []  # a value nobody committed to
+                if path in nz and commit_value(nz[path], v) == h:
+                    continue
+                if v is None or v == [None, None]:  # ([None, None] is a blanked before/after pair of a change list)
+                    blanks.append((op.get('e'), op.get('id'), f))  # blanked (or its nonce is gone)
+                else:
+                    return False, []  # a value that does not match its commitment: altered
+        for path in cm:
+            if path not in seen:
+                blanks.append((op.get('e'), op.get('id'), path.split('.', 1)[1]))
+    return True, blanks
 
 
 def env_chash(env):
@@ -78,18 +145,23 @@ def redact_ops(ops, targets):
         fields = targets.get((op.get('e'), op.get('id')))
         if not fields:
             continue
+        nz = op.get('nz')
         for key in ('s', 'b', 'r'):
             d = op.get(key)
             if isinstance(d, dict):
                 for f in fields:
-                    if f in d and d[f] is not None:
+                    if f in d and (d[f] is not None or (nz and f'{key}.{f}' in nz)):
                         d[f] = None
+                        if nz:
+                            nz.pop(f'{key}.{f}', None)
                         changed = True
         c = op.get('c')
         if isinstance(c, dict):
             for f in fields:
-                if f in c and c[f] != [None, None]:
+                if f in c and (c[f] != [None, None] or (nz and f'c.{f}' in nz)):
                     c[f] = [None, None]
+                    if nz:
+                        nz.pop(f'c.{f}', None)
                     changed = True
     return changed
 
@@ -281,6 +353,8 @@ class Journal:
                'hlc': self.clock.now(), 'deps': deps, 'kind': kind, 'ts': ts or now(), 'actor': str(actor or '')[:120],
                'actor_id': str(actor_id or ''), 'ip': str(ip or '')[:60], 'label': str(label or '')[:200], 'ops': ops, 'prev': prev}
         env = json.loads(canonical(env))
+        if kind != 'log':
+            seal_ops(env['ops'])
         env['ops_hash'] = ops_digest(env['ops'])
         body = canonical(env)
         h = env_chash(env)
@@ -392,8 +466,8 @@ class Journal:
             return 0
         n = 0
         for (entity, rid) in targets:
-            like = '%' + json.dumps(rid, ensure_ascii=False)[1:-1].replace('%', '').replace('_', '') + '%'
-            for row in c.execute('SELECT lsn, body, status, redacted FROM changes WHERE kind!=\'erase\' AND body LIKE ?', (like,)).fetchall():
+            like = '%' + json.dumps(rid, ensure_ascii=False)[1:-1].replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+            for row in c.execute('SELECT lsn, body, status, redacted FROM changes WHERE kind!=\'erase\' AND body LIKE ? ESCAPE \'\\\'', (like,)).fetchall():
                 env = json.loads(row['body'])
                 if redact_ops(env['ops'], {(entity, rid): targets[(entity, rid)]}):
                     c.execute('UPDATE changes SET body=?, redacted=COALESCE(redacted, ?) WHERE lsn=?', (canonical(env), 'erase-order', row['lsn']))
@@ -531,9 +605,12 @@ class Journal:
                     ops = json.loads(raw['o'])
                     if not isinstance(ops, list) or canonical(ops) != raw['o']:
                         raise ValueError('operations not in canonical form')
-                    if not raw.get('x') and ops_digest(ops) != env.get('ops_hash'):
-                        raise ValueError('operations do not match the signed hash')
                     env['ops'] = ops
+                    ok, blanks = check_ops(env)
+                    if not ok:
+                        raise ValueError('operations do not match the signed hash and commitments')
+                    if blanks:
+                        raw['x'] = 1  # values missing on purpose (erase order): remembered, and checked against the erase orders
                     body = canonical(env)
                     origin, cseq, node = env['origin'], env['cseq'], env['node']
                     if not isinstance(origin, str) or not isinstance(cseq, int) or not isinstance(node, str) or not origin.startswith(node + '-'):
@@ -840,10 +917,13 @@ class Journal:
                         continue
                     if env_chash(env) != r['hash']:
                         problems.append(f'{where}: content was changed after it was saved')
-                    if not r['redacted'] and ops_digest(env.get('ops')) != env.get('ops_hash'):
+                    ok, blanks = check_ops(env)
+                    if not ok:
                         problems.append(f'{where}: content was changed after it was saved (operations)')
-                    if r['redacted'] and not self.conn.execute('SELECT 1 FROM erased LIMIT 1').fetchone():
-                        problems.append(f'{where}: operations were erased without an erase order')
+                    for entity, rid, field in blanks:
+                        if not self.conn.execute('SELECT 1 FROM erased WHERE entity=? AND rid=? AND field=?', (entity, rid, field)).fetchone():
+                            problems.append(f'{where}: {entity} {rid} field {field} was removed without an erase order')
+                            break
                     if env.get('prev') != prev or env.get('origin') != o or env.get('cseq') != r['cseq']:
                         problems.append(f'{where}: chain broken')
                     prev = r['hash']

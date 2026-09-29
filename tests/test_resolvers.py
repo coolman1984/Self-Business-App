@@ -56,6 +56,22 @@ class WriteOnceTest(unittest.TestCase):
         with self.assertRaises(BadRequest):
             self.a.commit('edit', [{'e': 'issued', 'id': 'inv1', 'op': 'put', 'ver': ver, 'row': {'number': 'INV-A-1', 'total': 5, 'party': 'Client'}}])
 
+    def test_saving_an_issued_record_unchanged_or_restoring_a_backup_with_it_works(self):
+        import os
+        import tempfile
+        self.issue(self.a, 1000)
+        row = self.a.store.get('issued', 'inv1')
+        self.a.commit('same again', [{'e': 'issued', 'id': 'inv1', 'op': 'put', 'ver': row['ver'], 'row': {k: v for k, v in row.items() if k != 'ver'}}])
+        d = tempfile.mkdtemp()
+        try:
+            old = os.path.join(d, 'old.db')
+            with self.a.store.lock:
+                self.a.store.conn.execute('VACUUM INTO ?', (old,))
+            self.a.store.restore_from(old, 'boss', 'ip', 'restore')  # must not fail on the issued document
+            self.assertEqual(self.a.store.get('issued', 'inv1')['total'], 1000)
+        finally:
+            shutil.rmtree(d)
+
     def test_two_pcs_issuing_the_same_record_keep_the_earliest_everywhere(self):
         self.issue(self.a, 1000)
         self.issue(self.b, 2000, 'Other')  # concurrent: neither has seen the other

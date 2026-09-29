@@ -293,8 +293,6 @@ class Store:
         before = self._row_js(entity, cur) if cur and not cur['deleted'] else None
         what = f'{title[:-1] if title.endswith("s") else title} "{(before or op.get("row") or {}).get("name") or rid}"'
 
-        if before and SPECS[entity].get('immutable') and kind != 'del' and not op.get('resolve'):
-            raise BadRequest(f'{what} is issued and cannot be changed. Create a new version or a credit note instead.')
         if before and not force and op.get('ver') != cur['ver']:
             raise Conflict(f'{what} was changed by {cur["updated_by"] or "another user"} at {cur["updated_at"]}. '
                            'The screen has been refreshed - please repeat your change.')
@@ -332,6 +330,8 @@ class Store:
         if before:
             b = {k: v for k, v in before.items() if k != 'ver'}
             changes = {k: [b.get(k), after.get(k)] for k in set(b) | set(after) if b.get(k) != after.get(k)}
+            if changes and SPECS[entity].get('immutable') and not op.get('resolve'):
+                raise BadRequest(f'{what} is issued and cannot be changed. Create a new version or a credit note instead.')
             touch = [f for f in (op.get('resolve') or []) if f in names and f not in counters]
             if not changes and not touch:
                 return None, None

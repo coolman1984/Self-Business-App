@@ -117,6 +117,42 @@ class EraseTest(unittest.TestCase):
         finally:
             shutil.rmtree(d)
 
+    def test_a_relay_cannot_alter_or_blank_values_of_another_pcs_change(self):
+        self.make_area()
+        self.a.commit('more', [{'e': 'areas', 'id': 'p2', 'op': 'put', 'row': {'name': 'Second', 'location': 'Cairo'}}])
+        import json
+        recs = self.a.journal.changes_since(self.x.journal.vv())[0]
+        target = next(r for r in recs if b'Second' in r['o'].encode())
+        for label, mutate in (('altered value', lambda o: o.replace('Second', 'Hacked')),
+                              ('blanked value', lambda o: o.replace('"Second"', 'null'))):
+            forged = dict(target, o=mutate(target['o']))
+            other = Peer(self.c.root, 'probe-' + label.split()[0])
+            try:
+                other.node.join(self.a.node.info['cluster_id'], self.a.node.info['authority_pub'], self.a.node.id)
+                self.a.journal.write('admin', [__import__('cluster').enroll_op(other.node)], actor='admin', label='enrol', authority=True)
+                everything = self.a.journal.changes_since({})[0]
+                acc, _, problems = other.receive([forged if r['b'] == target['b'] else r for r in everything])
+                if label == 'altered value':
+                    self.assertTrue(problems, label)
+                    self.assertIsNone(other.store.get('areas', 'p2'))
+                else:
+                    # a blank is accepted on arrival (it looks like an erasure) but is reported by the integrity check
+                    rep = other.journal.verify(True)
+                    self.assertFalse(rep['ok'], label)
+                    self.assertIn('without an erase order', ' '.join(rep['problems']))
+            finally:
+                other.close()
+
+    def test_record_ids_with_wildcards_and_arabic_letters_are_found(self):
+        for rid in ('a_b%c', 'شخص_١', 'back\\slash'):
+            self.a.commit('create', [{'e': 'areas', 'id': rid, 'op': 'put', 'row': {'name': 'N', 'description': SECRET}}])
+        self.c.converge()
+        for rid in ('a_b%c', 'شخص_١', 'back\\slash'):
+            self.a.store.erase('boss', '127.0.0.1', 'areas', rid, ['description'], 'pdpl-request')
+        self.c.converge()
+        for p in self.c.peers:
+            self.assertNotIn(SECRET, dump_text(p), p.name)
+
     def test_erased_information_cannot_be_entered_again(self):
         self.make_area()
         self.erase()

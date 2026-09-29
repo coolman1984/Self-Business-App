@@ -30,6 +30,35 @@ class HashTest(unittest.TestCase):
         self.assertFalse(auth.verify_password('old-password-2', stored))
         self.assertTrue(auth.needs_rehash(stored))
 
+    def test_absurd_cost_parameters_in_a_stored_hash_are_refused(self):
+        self.assertFalse(auth.verify_password('x', 'scrypt$1073741824$8$1$aa$bb'))
+        self.assertFalse(auth.verify_password('x', 'scrypt$16384$1000$1$aa$bb'))
+
+    def test_many_parallel_hashes_stay_within_two_at_a_time(self):
+        import threading
+        import time
+        active, peak, lock = [0], [0], threading.Lock()
+        real = auth.hashlib.scrypt
+
+        def spy(*a, **k):
+            with lock:
+                active[0] += 1
+                peak[0] = max(peak[0], active[0])
+            time.sleep(0.05)
+            try:
+                return real(*a, **k)
+            finally:
+                with lock:
+                    active[0] -= 1
+        auth.hashlib.scrypt = spy
+        try:
+            ts = [threading.Thread(target=auth.hash_password, args=('pw',)) for _ in range(8)]
+            [t.start() for t in ts]
+            [t.join() for t in ts]
+        finally:
+            auth.hashlib.scrypt = real
+        self.assertLessEqual(peak[0], 2)
+
     def test_garbage_hashes_never_verify(self):
         for bad in ('', 'x', 'scrypt$1$2', 'md5$a$b', None, 'scrypt$zz$8$1$aa$bb'):
             self.assertFalse(auth.verify_password('x', bad))

@@ -100,8 +100,12 @@ def _parse(ts):
     return datetime.fromisoformat(ts) if ts else None
 
 
+_KDF_SLOTS = threading.BoundedSemaphore(2)  # scrypt needs ~135 MB: a burst of logins must not exhaust a small PC's memory
+
+
 def _scrypt(pw, salt, n, r, p):
-    return hashlib.scrypt(pw.encode('utf-8'), salt=salt, n=n, r=r, p=p, maxmem=128 * n * r * 2 + (1 << 20), dklen=32)
+    with _KDF_SLOTS:
+        return hashlib.scrypt(pw.encode('utf-8'), salt=salt, n=n, r=r, p=p, maxmem=128 * n * r * 2 + (1 << 20), dklen=32)
 
 
 def hash_password(pw):
@@ -128,6 +132,8 @@ def verify_password(pw, stored):
         parts = stored.split('$')
         if parts[0] == 'scrypt':
             _, n, r, p, salt, dk = parts
+            if not (2 ** 4 <= int(n) <= 2 ** 18 and 1 <= int(r) <= 16 and 1 <= int(p) <= 4):  # a stored hash must not choose an absurd cost
+                return False
             return hmac.compare_digest(_scrypt(pw, bytes.fromhex(salt), int(n), int(r), int(p)).hex(), dk)
         if parts[0] == 'pbkdf2_sha256':
             _, n, salt, dk = parts

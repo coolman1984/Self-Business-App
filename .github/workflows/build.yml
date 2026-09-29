@@ -22,7 +22,7 @@ jobs:
           python-version: '3.12'
       - name: Tests (engine, security, search, several PCs)
         working-directory: tests
-        run: python -m unittest test_unit test_convergence test_erase test_resolvers test_auth test_query test_search test_layers test_multinode
+        run: python -m unittest test_unit test_convergence test_erase test_resolvers test_auth test_query test_search test_layers test_secrets_in_logs test_multinode
 
   windows-installer:
     needs: test

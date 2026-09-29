@@ -55,6 +55,10 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
     cols = _cols(entity)
     meta = META.get(entity)
     table = ENTITIES[entity][0]
+    hidden = set(hidden_fields(entity, access['perms']))
+    for f in [x[0] for x in filters or []] + ([sort] if sort else []):
+        if f in hidden:
+            raise QueryError(f'Cannot filter or sort by {f}')
     limit = max(1, min(int(limit or 50), MAX_LIMIT))
     where, args = ([] if include_deleted else ['deleted=0']), []
     for field, op, value in filters or []:
@@ -98,7 +102,8 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
         where.append('created_by=?')
         args.append(access['user'])
     if search:
-        like_cols = [cols[f][0] for f in (meta.name_fields if meta else ()) if f in cols] or [c for c, k in cols.values() if k == 'text'][:3]
+        like_cols = [cols[f][0] for f in (meta.name_fields if meta else ()) if f in cols and f not in hidden] or \
+            [c for f, (c, k) in cols.items() if k == 'text' and f not in hidden][:3]
         if like_cols:
             where.append('(' + ' OR '.join(f"{c} LIKE ? ESCAPE '\\'" for c in like_cols) + ')')
             q = '%' + str(search).replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
@@ -135,6 +140,17 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
         last = rows[-1]
         nxt = _encode([last[order_col] if order_col != 'rowid' else None, last['_rowid']])
     return {'rows': out, 'next': nxt, 'total': total}
+
+
+def hidden_fields(entity, perms):
+    meta = META.get(entity)
+    hide = set()
+    if meta is not None:
+        if 'money.view' not in perms:
+            hide |= set(meta.money_fields)
+        if 'data.sensitive' not in perms:
+            hide |= set(meta.sensitive_fields)
+    return hide
 
 
 def mask(entity, row, perms):

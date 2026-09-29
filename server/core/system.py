@@ -88,7 +88,7 @@ class System:
             c.execute('BEGIN IMMEDIATE')
             for spec in SPECS.values():
                 c.execute(f'DELETE FROM {spec["table"]}')
-            for t in ('sync_field', 'sync_marker', 'sync_flags'):
+            for t in ('sync_field', 'sync_marker', 'sync_flags', 'sync_dropped'):
                 c.execute(f'DELETE FROM {t}')
             c.execute('COMMIT')
         self.store.fold_pending()
