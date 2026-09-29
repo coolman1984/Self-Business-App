@@ -51,6 +51,22 @@ Ideas harvested from BAMS are listed in BAMS' own `IDEAS.md`; here only new idea
   synced, never backed up as truth.
 - 🇪🇬 الفهارس بتتبني من البيانات على كل جهاز، ولو باظت بنبنيها تاني في ثواني.
 
+## 11. Write-once records: "earliest write wins", whatever arrives first
+- **Problem:** an issued invoice must never change, but two offline PCs may both "issue" the same document, and a rule like
+  "lock after issue" depends on which change arrived first.
+- **Idea:** keep only the earliest write per field by (clock, PC, number); remember the others as dropped and flag the row.
+- **Where:** `replica.Registers.write(once=True)`, entities with `immutable=True`. **Proof:** `tests/test_resolvers.py` (all arrival orders).
+- 🇪🇬 الفاتورة اللي اتصدرت أول واحدة هي اللي بتفضل في كل الأجهزة، ومهما كان ترتيب وصول التغييرات النتيجة واحدة.
+
+## 12. Sign the hash of the operations, not the operations
+- **Problem:** a signed history cannot forget; the law sometimes requires forgetting.
+- **Idea:** the signature covers `ops_hash`; the operations live beside it; erasing replaces them, the chain still verifies.
+- 🇪🇬 الختم بيتحط على بصمة التفاصيل مش على التفاصيل نفسها، فنقدر نمسح بيانات شخص من غير ما نكسر السجل.
+
+## 13. Mutation-check the tests that guard security
+- **Idea:** switch the protection off in a copy of the code and confirm that the tests fail; if they still pass, they prove nothing.
+- 🇪🇬 قبل ما تصدّق اختبار أمان، اقفل الحماية بإيدك وشوف الاختبار بيفشل ولا لأ.
+
 ## 10. Browser app mode as a desktop window
 - **Idea:** `msedge --app=http://127.0.0.1:<port>` gives a native-looking window with zero dependencies.
 - 🇪🇬 البرنامج يفتح في شباك لوحده كأنه برنامج ويندوز، من غير ما نزود أي مكتبة.

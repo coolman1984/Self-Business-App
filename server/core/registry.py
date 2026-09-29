@@ -41,8 +41,19 @@ class Entity:
     money_fields: tuple = ()                      # hidden from users without the permission money.view
     sensitive_fields: tuple = ()                  # hidden from users without the permission data.sensitive
     immutable: bool = False                       # write-once record (issued documents): the earliest write wins, edits are refused
+    validate: Optional[Callable] = None           # fn(row) raising store.BadRequest with a plain-words message
+    perm_prefix: Optional[str] = None             # 'clients' -> clients.view / .create / .edit / .delete
+    perms: dict = field(default_factory=dict)     # explicit {'view'|'insert'|'update'|'delete': (permission, ...)}; any one is enough
     index: tuple = ()                             # extra columns to index
     name_fields: tuple = ('name', 'title', 'caption')  # what to call a record in messages
+
+    def perms_for(self, op):
+        """The permissions (any one is enough) for 'view', 'insert', 'update' or 'delete'. Empty = nobody may."""
+        if self.perms.get(op):
+            return tuple(self.perms[op])
+        if self.perm_prefix:
+            return (self.perm_prefix + {'view': '.view', 'insert': '.create', 'update': '.edit', 'delete': '.delete'}[op],)
+        return ()
 
     def columns(self):
         return [col for _, col, _, _ in self.fields]

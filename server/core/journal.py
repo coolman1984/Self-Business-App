@@ -841,7 +841,7 @@ class Journal:
                     if env_chash(env) != r['hash']:
                         problems.append(f'{where}: content was changed after it was saved')
                     if not r['redacted'] and ops_digest(env.get('ops')) != env.get('ops_hash'):
-                        problems.append(f'{where}: operations were changed after they were saved')
+                        problems.append(f'{where}: content was changed after it was saved (operations)')
                     if r['redacted'] and not self.conn.execute('SELECT 1 FROM erased LIMIT 1').fetchone():
                         problems.append(f'{where}: operations were erased without an erase order')
                     if env.get('prev') != prev or env.get('origin') != o or env.get('cseq') != r['cseq']:

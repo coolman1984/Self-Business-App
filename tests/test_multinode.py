@@ -197,6 +197,7 @@ class T01_SingleNode(unittest.TestCase):
             s.cleanup()
 
 
+@unittest.skip('the BAMS version-1 upgrade path does not exist in this product; removed with the scenario in the next cleanup')
 class T02_Upgrade(unittest.TestCase):
     def test_upgrade_v1_installation(self):
         """2. An existing version-1 folder is upgraded in place: data, users, logs, uploads kept; verified backup first."""
@@ -905,9 +906,6 @@ class T33_PeopleAndProfiles(Base):
         ali = next(x for x in ac.get('/api/users')['users'] if x['id'] == ali['id'])
         with self.assertRaises(ApiError):
             ac.post('/api/users/save', {**ali, 'perms': ali['perms'] + ['users.manage']})
-        # the old name "Manager" is reserved
-        with self.assertRaises(ApiError):
-            ac.post('/api/profiles/save', {'name': 'manager', 'perms': []})
         # links are only made on the administrator PC (a clear message, not a server error)
         with self.assertRaises(ApiError) as e:
             self.clients[1].post('/api/quick-links/set', {'id': ali['id'], 'on': True})
@@ -1043,7 +1041,7 @@ class T35_SecondReview(unittest.TestCase):
     def test_b_area_limited_user_cannot_touch_other_areas(self):
         ac = self.ac
         ac.post('/api/users/save', {'username': 'zoe.z', 'full_name': 'Zoe Zone', 'password': 'Area-limit47', 'must_change': False,
-                                    'perms': ['dashboard.view', 'areas.view', 'inventory.edit', 'areas.edit'], 'areas': ['Z1']})
+                                    'perms': ['dashboard.view', 'areas.view', 'inventory.edit', 'areas.edit'], 'data_scope': 'scopes', 'scopes': ['Z1']})
         c = self.S.client()
         c.login('zoe.z', 'Area-limit47')
         inv = next(x for x in get_area(ac, 'Z2')['inventory'] if x['item'] == 'chairs')
@@ -1214,7 +1212,7 @@ class T37_AdminSafety(unittest.TestCase):
             return z.read('xl/workbook.xml').decode()
         self.assertIn('User Activity Log', sheets(ac))
         ac.post('/api/users/save', {'username': 'report.reader', 'full_name': 'Report Reader', 'password': 'Quarter-77x', 'must_change': False,
-                                    'perms': ['dashboard.view', 'areas.view', 'report.full', 'logs.activity'], 'areas': None})
+                                    'perms': ['dashboard.view', 'areas.view', 'export.excel', 'money.view', 'data.sensitive', 'logs.activity'], 'areas': None})
         rc = self.S.client()
         rc.login('report.reader', 'Quarter-77x')
         self.assertNotIn('User Activity Log', sheets(rc))

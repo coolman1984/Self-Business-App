@@ -545,6 +545,12 @@ class Auth:
                 n = self.conn.execute('DELETE FROM sessions WHERE user_id=?', (uid,)).rowcount
         return n
 
+    def verify_current_password(self, u, password):
+        """Re-entering the own password before a dangerous action (legal erasure, key export)."""
+        with self.lock:
+            r = self.conn.execute('SELECT pw_hash FROM users WHERE id=?', (u['id'],)).fetchone()
+        return bool(r) and verify_password(password or '', r['pw_hash'])
+
     def change_password(self, u, old, new, ip, token):
         with self.lock:
             r = self.conn.execute('SELECT pw_hash FROM users WHERE id=?', (u['id'],)).fetchone()

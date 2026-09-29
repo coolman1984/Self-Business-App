@@ -28,7 +28,8 @@ from journal import canonical
 from registry import B, COUNTERS, ENTITIES, I, J, META, R, REPLICATED, RESOLVERS, SPECS, T, Entity, scope_of  # noqa: F401
 
 # the two entities every installation has; everything else is registered by the platform and the modules
-registry.register(Entity('settings', 'settings', 'Settings', [('value', 'value', J, 'Value')]))
+registry.register(Entity('settings', 'settings', 'Settings', [('value', 'value', J, 'Value')], perms={
+    'view': ('settings.view',), 'insert': ('settings.edit',), 'update': ('settings.edit',), 'delete': ('settings.edit',)}))
 # manifest of uploaded files (photos, documents, logo): path -> SHA-256 and size, replicated so every PC can
 # fetch and verify the files it is missing
 FILES = ('attachments', [('sha256', 'sha256', T), ('size', 'size_bytes', I), ('type', 'mime', T)])
@@ -316,16 +317,11 @@ class Store:
         if kind != 'put' or not isinstance(op.get('row'), dict):
             raise BadRequest(f'Invalid change: {entity}/{rid}')
         row = op['row']
-        for f in ('src', 'thumb'):  # file references must stay inside the uploads folder
-            v = row.get(f)
+        for v in row.values():  # file references must stay inside the uploads folder
             if isinstance(v, str) and v.startswith('/files/') and ('..' in v or '\\' in v or ':' in v):
                 raise BadRequest('Invalid file reference')
-        if entity == 'surveys':
-            p = _coerce(R, row.get('percentage'))
-            if p is None or not 0 <= p <= 100:
-                raise BadRequest('Satisfaction percentage must be between 0 and 100')
-            if not re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', str(row.get('month') or '')):
-                raise BadRequest('Survey month is required (YYYY-MM)')
+        if entity in META and META[entity].validate:
+            META[entity].validate(row)  # raises BadRequest with a plain-words message
         vals = {col: _coerce(kind_, row.get(js)) for js, col, kind_, _ in fields}
         after = {'id': rid, **{js: _out(k, vals[col]) for js, col, k, _ in fields if vals[col] is not None}}
         if self.journal is not None:

@@ -48,7 +48,7 @@ def _refresh():
 
 # ---- engine permissions ----
 register_group('Data', [
-    ('data.sensitive', 'See sensitive information (national id, licence keys, private notes)'),
+    ('data.sensitive', 'See sensitive information (national id, product keys, private notes)'),
     ('money.view', 'See amounts, prices and money reports'),
     ('export.excel', 'Export lists to Excel'),
     ('print', 'Print lists and reports / save as PDF'),

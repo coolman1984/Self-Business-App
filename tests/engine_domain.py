@@ -65,7 +65,18 @@ LEGACY_RESOLVERS = {
 AREA_CHILDREN = ['inventory', 'photos', 'docs', 'issues', 'maintenance', 'inspections', 'surveys']
 
 
-SCOPE = {'areas': dict(scope_self=True), 'inventory': dict(scope_field='areaId'), 'surveys': dict(scope_field='areaId', dup_keys=['areaId', 'month', 'department']),
+import re  # noqa: E402
+
+
+def _check_survey(row):
+    p = store._coerce(R, row.get('percentage'))
+    if p is None or not 0 <= p <= 100:
+        raise store.BadRequest('Satisfaction percentage must be between 0 and 100')
+    if not re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', str(row.get('month') or '')):
+        raise store.BadRequest('Survey month is required (YYYY-MM)')
+
+
+SCOPE = {'areas': dict(scope_self=True), 'inventory': dict(scope_field='areaId'), 'surveys': dict(scope_field='areaId', dup_keys=['areaId', 'month', 'department'], validate=_check_survey),
          'photos': dict(scope_field='areaId', file_fields=('src', 'thumb')), 'docs': dict(scope_field='areaId', file_fields=('src',)),
          'issues': dict(scope_field='areaId'), 'issueLog': dict(scope_via=('issueId', 'issues')), 'maintenance': dict(scope_field='areaId'),
          'inspections': dict(scope_field='areaId'), 'history': dict(scope_field='areaId')}
@@ -100,3 +111,83 @@ def nested_state(st):
                 r['log'] = logs.get(r['id'], [])
             a[c].append(r)
     return {'itemTypes': rows['itemTypes'], 'areas': areas, 'history': [h for h in rows['history'] if h.get('areaId') in by_id]}
+
+
+# ---------------------------------------------------------------- permissions, profiles and routes of the test domain
+import permissions  # noqa: E402
+
+GROUPS = [
+    ('Pages - what the person can open', [('dashboard.view', 'Dashboard'), ('areas.view', 'Break Areas list and profiles'),
+                                          ('equipment.view', 'Furniture & Equipment page'), ('transactions.view', 'Transactions page'),
+                                          ('maintenance.view', 'Inspection & Maintenance page'), ('reports.view', 'Reports page'),
+                                          ('surveys.view', 'Satisfaction survey results')]),
+    ('Break Areas', [('areas.create', 'Add new break areas'), ('areas.edit', 'Edit break areas'), ('areas.delete', 'Delete break areas')]),
+    ('Inventory', [('inventory.edit', 'Add, remove and transfer items'), ('inventory.delete', 'Delete an item'),
+                   ('itemtypes.manage', 'Item types')]),
+    ('Issues', [('issues.create', 'Report issues'), ('issues.followup', 'Follow up issues'), ('issues.delete', 'Delete issues')]),
+    ('Maintenance', [('maintenance.create', 'Schedule maintenance'), ('maintenance.complete', 'Complete maintenance'),
+                     ('maintenance.delete', 'Delete maintenance'), ('inspections.create', 'Record inspections'),
+                     ('inspections.delete', 'Delete inspections')]),
+    ('Surveys', [('surveys.create', 'Add results'), ('surveys.edit', 'Edit results'), ('surveys.delete', 'Delete results')]),
+    ('Files', [('files.upload', 'Upload'), ('files.download', 'Download'), ('files.delete', 'Delete')]),
+    ('Reports', [('report.full', 'Complete export')]),
+]
+PERMS_OF = {
+    'areas': ('areas.view', ('areas.create',), ('areas.edit', 'issues.create', 'maintenance.create', 'maintenance.complete', 'inspections.create'), ('areas.delete',)),
+    'inventory': ('areas.view', ('inventory.edit',), ('inventory.edit',), ('inventory.delete', 'itemtypes.manage')),
+    'surveys': ('surveys.view', ('surveys.create',), ('surveys.edit',), ('surveys.delete',)),
+    'photos': ('areas.view', ('files.upload', 'areas.create'), ('files.upload', 'files.delete'), ('files.delete',)),
+    'docs': ('areas.view', ('files.upload',), ('files.upload',), ('files.delete',)),
+    'issues': ('areas.view', ('issues.create',), ('issues.followup',), ('issues.delete',)),
+    'issueLog': ('areas.view', ('issues.followup',), ('issues.followup',), ('issues.delete',)),
+    'maintenance': ('maintenance.view', ('maintenance.create',), ('maintenance.complete',), ('maintenance.delete',)),
+    'inspections': ('maintenance.view', ('inspections.create',), ('inspections.create',), ('inspections.delete',)),
+    'history': ('transactions.view', ('inventory.edit', 'areas.create', 'maintenance.complete'), ('areas.delete',), ('areas.delete',)),
+    'itemTypes': ('areas.view', ('itemtypes.manage',), ('itemtypes.manage',), ('itemtypes.manage',)),
+}
+
+
+def register_permissions():
+    for title, perms in GROUPS:
+        permissions.register_group(title, perms)
+    pages = ['dashboard.view', 'areas.view', 'equipment.view', 'transactions.view', 'maintenance.view', 'surveys.view']
+    permissions.register_profile('full-access', 'Full access', lambda: list(permissions.WORK))
+    permissions.register_profile('data-entry', 'Data Entry', pages + ['inventory.edit', 'issues.create', 'issues.followup', 'maintenance.create',
+                                                                      'maintenance.complete', 'inspections.create', 'surveys.create', 'surveys.edit',
+                                                                      'files.upload', 'files.download', 'export.excel', 'print'])
+    permissions.register_profile('visitor', 'Visitor', ['dashboard.view', 'areas.view'])
+
+
+def _with_perms():
+    for e, (view, ins, upd, dele) in PERMS_OF.items():
+        meta = registry.META.get(e)
+        if meta:
+            meta.perms = {'view': (view,), 'insert': ins, 'update': upd, 'delete': dele}
+
+
+_orig_register = register
+
+
+def register():
+    _orig_register()
+    register_permissions()
+    _with_perms()
+    import auth
+    auth.KDF_N = 2 ** 10  # tests only (this module is never shipped): fast logins; production uses 2**17
+
+
+def routes(app):
+    """Test-only API route /api/state (the nested shape the BAMS tests expect), filtered by the user's data scope."""
+    import query
+
+    def state(h):
+        acc = query.access_for(h.u)
+        st = nested_state(app.store)
+        if acc['mode'] == 'scopes':
+            keep = set(acc['scopes'])
+            st['areas'] = [a for a in st['areas'] if a['id'] in keep]
+        if 'surveys.view' not in h.u['perms']:
+            for a in st['areas']:
+                a['surveys'] = []
+        h.send(200, st)
+    app.route('GET', '/api/state', state, perms=('dashboard.view', 'areas.view'))

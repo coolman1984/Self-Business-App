@@ -40,17 +40,10 @@ def load_cfg():
     return cfg, data, os.path.join(data, 'uploads'), res(cfg.get('backup_dir', 'backups')), [res(d) for d in cfg.get('extra_backup_dirs', [])]
 
 
-def load_domains():
-    """Registers the entities of the platform and the modules. SBO_ENTITY_MODULES (comma separated module names, each with
-    a register() function) is used by tests; the product registers its own platform here."""
-    import importlib
-    for name in filter(None, os.environ.get('SBO_ENTITY_MODULES', '').split(',')):
-        importlib.import_module(name.strip()).register()
-
-
 def open_system():
     from system import System
-    load_domains()
+    import bootstrap
+    bootstrap.register_domains()
     cfg, data, uploads, backups, extra = load_cfg()
     return System(data, cfg, uploads, backups, extra, log=print)
 

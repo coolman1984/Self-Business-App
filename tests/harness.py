@@ -114,7 +114,8 @@ class Server:
             json.dump(cfg, f)
 
     def start(self, wait=True):
-        env = dict(os.environ, SBO_CONFIG=self.cfg_path, PYTHONUNBUFFERED='1')
+        env = dict(os.environ, SBO_CONFIG=self.cfg_path, PYTHONUNBUFFERED='1', SBO_ENTITY_MODULES='engine_domain',
+                   PYTHONPATH=os.path.dirname(os.path.abspath(__file__)))
         self.proc = subprocess.Popen([sys.executable, APP], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         threading.Thread(target=self._drain, args=(self.proc,), daemon=True).start()
         if wait:

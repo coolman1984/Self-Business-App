@@ -135,6 +135,10 @@ serializer only emits `client` fields of `client` records of that client. Enforc
 | ADR-014 | Automations: one runner PC executes (default: owner PC, failover by role); created records use deterministic ids (rule + trigger event) so a double run merges instead of duplicating; external effects go through an outbox with idempotency keys and optional human approval | offline multi-PC would otherwise run every rule on every PC | runner role management |
 | ADR-015 | Tax, messaging, payments, calendar, signature, AI = ports + adapters (connectors) | laws and providers change; core stays stable | adapter per provider |
 | ADR-016 | i18n: Arabic + English, every string by key, logical CSS properties, `dir` switch, Western digits by default (setting) | brief §11 | test for missing keys and RTL snapshots |
+| ADR-017 | Issued documents are **write-once snapshot entities** (earliest write wins, edits refused, later writes flagged) instead of a field-lock rule | a lock decided by arrival order is not deterministic; write-once is (proved by permutation tests) | the editable draft and the issued snapshot are two entities |
+| ADR-018 | The engine ships **without any business entity**: `registry.py` + `permissions.py` are filled by the platform and modules; tests use a test-only domain (`tests/engine_domain.py`) | keeps the core reusable for BAMS/Trip Orders later and testable | every product start must call `bootstrap.register_domains()` first |
+| ADR-019 | Derived search index (`index.db`, FTS5) is updated from the rows the fold touched (`after_fold` hook) and rebuilt on schema change | no full scans, never a source of truth | one more file per PC |
+| ADR-020 | Passwords: scrypt (N=2^17, r=8, p=1) via the standard library now; the optional `cryptography` dependency (Argon2id, AES-GCM backups) is deferred to Phase 11 with a benchmark on an old laptop | OWASP order of preference among what the stdlib offers; no packaging risk in Phase 1 | ~0.8 s per login on the dev machine — measure on the reference laptop |
 
 ## 7. Performance and reliability budgets
 
