@@ -43,6 +43,12 @@ class System:
             self.store.fold_pending()
             self.auth.fold_pending()
         self.backups.journal = self.journal
+        self.journal.erase_listeners.append(self._scrub_copies)
+
+    def _scrub_copies(self, targets):
+        """An erase order was accepted: the copies outside the database (audit files, backups) are blanked too."""
+        self.store.scrub_logs(targets)
+        self.backups.scrub(targets)
 
     def _archive_copy(self):
         """The data folder was copied from another PC and the administrator chose "set up as a new PC": everything of

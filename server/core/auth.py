@@ -335,8 +335,6 @@ class Auth:
         for part in [username] + (full_name or '').split():
             if part and len(part) >= 3 and part.lower() in low:
                 raise AuthError('The password must not contain the user name or the person\'s name.')
-        if not (re.search(r'[A-Za-z]', pw) and re.search(r'[^A-Za-z]', pw)):
-            raise AuthError('The password must contain letters and at least one number or symbol.')
 
     # ------------------------------------------------------------ first setup
     def setup(self, username, full_name, password, ip):

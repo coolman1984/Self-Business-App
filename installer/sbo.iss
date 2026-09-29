@@ -50,7 +50,7 @@ Name: "autostart"; Description: "Start with Windows (recommended - keeps this PC
 
 [Dirs]
 ; data, backups and settings: writable for everybody who uses this PC, kept when the program is updated or removed
-Name: "{commonappdata}\SelfBusinessOS"; Permissions: users-modify; Flags: uninsneveruninstall
+Name: "{commonappdata}\SelfBusinessOS"; Flags: uninsneveruninstall
 
 [Files]
 Source: "..\build\sbo_main.dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -61,6 +61,8 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\SBO.exe"; Tasks: desktopico
 Name: "{commonstartup}\{#MyAppName}"; Filename: "{app}\SBO.exe"; Parameters: "--background"; Tasks: autostart
 
 [Run]
+; the data folder holds the keys and the databases: only Administrators, the system and the person who installed the program may use it
+Filename: "{sys}\icacls.exe"; Parameters: """{commonappdata}\SelfBusinessOS"" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F ""{username}"":(OI)(CI)M"; Flags: runhidden; StatusMsg: "Protecting your data folder..."
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""{#MyAppName}"""; Flags: runhidden; StatusMsg: "Allowing the other PCs to connect..."
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""{#MyAppName}"" dir=in action=allow program=""{app}\SBO.exe"" enable=yes profile=private,domain"; Flags: runhidden
 Filename: "{app}\SBO.exe"; Description: "Open {#MyAppName} now"; Flags: nowait postinstall skipifsilent runasoriginaluser

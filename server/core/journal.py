@@ -219,6 +219,7 @@ class Journal:
         self._deps_cache = {}
         self._activity = []  # buffered user activity, written as one changeset every minute
         self.listeners = []  # called after new changesets were appended: fn(list of envs)
+        self.erase_listeners = []  # called after an erase order was accepted: fn(targets {(entity, id): {fields}}) - scrub copies outside the journal
 
     def _schema(self):
         self.conn.executescript('''
@@ -449,6 +450,13 @@ class Journal:
             for r in recs:
                 env = r['env']
                 self.heads[env['origin']] = (env['cseq'], r['hash'], env['node'])
+        pending, self._erase_pending = getattr(self, '_erase_pending', []), []
+        for targets in pending:
+            for fn in self.erase_listeners:
+                try:
+                    fn(targets)
+                except Exception as e:  # noqa: BLE001 - scrubbing copies is repeated at the next start
+                    self.log(f'erase listener failed: {e}')
 
     # ------------------------------------------------------------ legal erasure (see docs/SECURITY.md section 5)
     def _register_erase(self, c, env):
@@ -459,6 +467,7 @@ class Journal:
                 c.execute('INSERT OR REPLACE INTO erased VALUES (?,?,?,?,?)', (op['e'], op['id'], f, env['id'], env['ts']))
                 targets.setdefault((op['e'], op['id']), set()).add(f)
         self._redact_stored(c, targets)
+        self._erase_pending = getattr(self, '_erase_pending', []) + [targets]  # listeners run after the transaction has committed
 
     def _redact_stored(self, c, targets):
         """Blanks the fields in every stored change that mentions the records, and rebuilds their audit rows."""
@@ -609,8 +618,7 @@ class Journal:
                     ok, blanks = check_ops(env)
                     if not ok:
                         raise ValueError('operations do not match the signed hash and commitments')
-                    if blanks:
-                        raw['x'] = 1  # values missing on purpose (erase order): remembered, and checked against the erase orders
+                    raw['_blanks'] = blanks  # values missing on purpose (erase order): accepted only when an erase order covers them
                     body = canonical(env)
                     origin, cseq, node = env['origin'], env['cseq'], env['node']
                     if not isinstance(origin, str) or not isinstance(cseq, int) or not isinstance(node, str) or not origin.startswith(node + '-'):
@@ -623,6 +631,8 @@ class Journal:
                     self.alert('bad-data', f'Unreadable change received from {via}: {e}', via)
                     break
                 pending.append((raw, env, body, chash(sbody)))
+            self._batch_erased = {(op.get('e'), op.get('id'), f) for raw_, e, _, h_ in pending if e.get('kind') == 'erase' and self._check(e, raw_, h_) == 'ok'
+                                  for op in e['ops'] if isinstance(op, dict) for f in (op.get('s') or {})}
             # several passes, so changes that arrive in any order within one delivery are still taken in the right order
             progress = True
             while progress and pending:
@@ -679,6 +689,15 @@ class Journal:
             problems.append(f'chain {origin}#{cseq}')
             self.alert('fork', f'The history of PC {node} does not continue the copy stored here (change #{cseq}).', node, key=f'fork|{origin}')
             return 'drop'
+        blanks = raw.get('_blanks') or []
+        if blanks:
+            covered = set(self._batch_erased) | {(op.get('e'), op.get('id'), f) for a in accepted if a['env'].get('kind') == 'erase' and a['status'] == 'ok'
+                                                 for op in a['env']['ops'] for f in (op.get('s') or {})}
+            known = {(r['entity'], r['rid'], r['field']) for r in self.conn.execute('SELECT entity, rid, field FROM erased')}
+            if any(b not in covered and b not in known for b in blanks):
+                self.alert('integrity', f'A change of PC {node} arrived with missing values that no erase order explains; it waits.', node,
+                           'warning', key=f'blank|{origin}|{cseq}')
+                return 'wait'
         deps = env.get('deps') or {}
         if not isinstance(deps, dict) or any(not isinstance(c, int) or heads.get(o, (0,))[0] < c for o, c in deps.items() if o != origin):
             return 'wait'
@@ -971,8 +990,8 @@ class Journal:
         return out
 
     # ------------------------------------------------------------ log queries (monitoring)
-    def query(self, table, q='', user='', typ='', scope='', frm='', to='', node='', limit=200, offset=0, scopes=None, business_only=False):
-        cols = {'audit': ['label', 'entity', 'entity_id', 'changes', 'before', 'after'], 'activity': ['action', 'target', 'page', 'detail'],
+    def query(self, table, q='', user='', typ='', scope='', frm='', to='', node='', limit=200, offset=0, scopes=None, business_only=False, search_values=True):
+        cols = {'audit': ['label', 'entity', 'entity_id'] + (['changes', 'before', 'after'] if search_values else []), 'activity': ['action', 'target', 'page', 'detail'],
                 'security': ['target', 'detail', 'user']}[table]
         where, args = [], []
         if business_only and table == 'audit':  # user accounts and PCs are for administrators only

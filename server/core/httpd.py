@@ -20,9 +20,9 @@ import threading
 import time
 import traceback
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import backup as backup_mod
 import query as query_mod
@@ -65,7 +65,7 @@ IMAGE_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
 INLINE_EXT = IMAGE_EXT | {'.pdf'}
 # a file is stored under the extension of its real content: (leading bytes) -> extensions that are allowed for it
 MAGIC = {b'\xff\xd8\xff': {'.jpg', '.jpeg'}, b'\x89PNG\r\n\x1a\n': {'.png'}, b'GIF8': {'.gif'}, b'%PDF': {'.pdf'},
-         b'PK\x03\x04': {'.docx', '.xlsx', '.pptx', '.zip'}, b'\xd0\xcf\x11\xe0': {'.doc', '.xls', '.ppt'}}
+         b'PK\x03\x04': {'.docx', '.xlsx', '.pptx', '.zip'}, b'\xd0\xcf\x11\xe0': {'.doc', '.xls', '.ppt'}, b'BM': {'.bmp'}}
 TYPES = {'.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
          '.html': 'text/html; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.webp': 'image/webp',
          '.webmanifest': 'application/manifest+json',
@@ -84,6 +84,26 @@ def perm_label(p):
     if not PERM_LABEL or p not in PERM_LABEL:
         PERM_LABEL.update({k: label for _, ps in PERMISSIONS for k, label in ps})
     return PERM_LABEL.get(p, p)
+
+
+def mask_audit_row(row, perms):
+    """Removes hidden (money / sensitive) fields from the old and new values of one data-change log row."""
+    hide = query_mod.hidden_fields(row.get('entity'), perms)
+    if not hide:
+        return
+    for key in ('changes', 'before', 'after'):
+        try:
+            d = json.loads(row[key]) if row.get(key) else None
+        except ValueError:
+            continue
+        if isinstance(d, dict):
+            row[key] = json.dumps({k: v for k, v in d.items() if k not in hide}, ensure_ascii=False, sort_keys=True)
+
+
+def attachment_header(filename):
+    """Content-Disposition for a download whose name may contain Arabic letters: an ASCII fallback plus the RFC 5987 form."""
+    ascii_name = ''.join(ch if ch.isascii() and (ch.isalnum() or ch in ' _-.') else '_' for ch in filename) or 'download'
+    return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename, safe="")}'
 
 
 def load_config(path):
@@ -312,6 +332,8 @@ def make_handler(app):
             return bool(self.u) and any(p in self.u['perms'] for p in perms)
 
         def need(self, *perms):
+            if not perms:
+                raise Forbidden('This is not allowed.')
             if not self.can(*perms):
                 raise Forbidden('You do not have permission for this. Ask the administrator for: "' + perm_label(perms[0]) + '".')
 
@@ -528,13 +550,19 @@ def make_handler(app):
                 if p == '/api/activity':
                     self.need_admin()
                 node = qs.get('node', '') if is_admin(self.u) else ''
-                scopes = self.u.get('scopes') if (self.u.get('data_scope') or 'all') == 'scopes' else None
+                scopes = (self.u.get('scopes') or []) if (self.u.get('data_scope') or 'all') == 'scopes' else None  # nothing assigned = nothing shown
                 if (self.u.get('data_scope') or 'all') == 'own':
                     scopes = []
-                return self.send(200, app.store.query_log('audit' if p == '/api/audit' else 'activity', qs.get('q', ''), qs.get('user', ''),
-                                                          qs.get('type', ''), qs.get('scope', ''), qs.get('from', ''), qs.get('to', ''),
-                                                          max(1, min(1000, int(qs.get('limit', 200)))), max(0, int(qs.get('offset', 0))),
-                                                          scopes, node, admin=is_admin(self.u)))
+                perms = set(self.u['perms'])
+                sees_values = {'money.view', 'data.sensitive'} <= perms  # otherwise the log must not reveal hidden fields
+                res = app.store.query_log('audit' if p == '/api/audit' else 'activity', qs.get('q', ''), qs.get('user', ''),
+                                          qs.get('type', ''), qs.get('scope', ''), qs.get('from', ''), qs.get('to', ''),
+                                          max(1, min(1000, int(qs.get('limit', 200)))), max(0, int(qs.get('offset', 0))),
+                                          scopes, node, admin=is_admin(self.u), search_values=sees_values)
+                if p == '/api/audit' and not sees_values:
+                    for row in res['rows']:
+                        mask_audit_row(row, perms)
+                return self.send(200, res)
             if p == '/api/security':
                 self.need('logs.security')
                 self.need_admin()
@@ -568,7 +596,7 @@ def make_handler(app):
                 data = xlsx.build(app.store.export_sheets(admin=is_admin(self.u) and self.can('logs.activity')))
                 log.info('EXPORT full workbook by %s (%s)', self.user, self.ip)
                 app.store.log_activity(self.user, self.ip, [{'type': 'export', 'action': 'Full Excel export', 'target': 'All data'}])
-                return self.send(200, data, TYPES['.xlsx'], {'Content-Disposition': f'attachment; filename="Export_{datetime.now():%Y-%m-%d_%H%M}.xlsx"'})
+                return self.send(200, data, TYPES['.xlsx'], {'Content-Disposition': attachment_header(f'Export_{datetime.now():%Y-%m-%d_%H%M}.xlsx')})
             if p.startswith('/files/'):
                 self.need('files.download')
                 return self.serve_file(app.uploads, p[len('/files/'):], src=p)
@@ -695,7 +723,6 @@ def make_handler(app):
                 if not app.auth.verify_current_password(self.u, d.get('password')):
                     app.auth.log(self.user, self.ip, 'erase-refused', str(d.get('entity')), 'Wrong password')
                     raise Forbidden('Enter your own password to confirm.')
-                app.backups.create('pre-erase')
                 res = app.store.erase(self.user, self.ip, d.get('entity'), str(d.get('id') or ''), d.get('fields'), d.get('reason'),
                                       d.get('basis', ''), d.get('ref', ''), self.u['id'])
                 app.auth.log(self.user, self.ip, 'erase-order', f'{d.get("entity")} {d.get("id")}',
@@ -708,8 +735,8 @@ def make_handler(app):
                 self.need('export.excel', 'users.manage')
                 d = self.json_body()
                 data = xlsx.build([(s.get('name', 'Sheet'), s.get('head', []), s.get('rows', [])) for s in d.get('sheets', [])])
-                name = ''.join(ch for ch in str(d.get('filename') or 'export') if ch.isalnum() or ch in ' _-.')[:80]
-                return self.send(200, data, TYPES['.xlsx'], {'Content-Disposition': f'attachment; filename="{name}.xlsx"'})
+                name = ''.join(ch for ch in str(d.get('filename') or 'export') if ch.isalnum() or ch in ' _-.')[:80] or 'export'
+                return self.send(200, data, TYPES['.xlsx'], {'Content-Disposition': attachment_header(name + '.xlsx')})
             if p == '/api/backups':
                 self.need('backups.manage')
                 name = app.backups.create('manual')
@@ -786,7 +813,22 @@ def make_handler(app):
             d = self.json_body()
             sync, node, journal = app.sync, app.node, app.journal
             try:
+                if action == 'open-join':  # joining without a code is possible only while the administrator has opened it
+                    if not node.is_authority:
+                        raise Forbidden('Only the administrator PC can allow a new PC to join.')
+                    minutes = max(1, min(60, int(d.get('minutes') or 10)))
+                    until = (datetime.now() + timedelta(minutes=minutes)).isoformat(timespec='seconds')
+                    journal.set_meta('open_join_until', until)
+                    app.auth.log(self.u['display'], self.ip, 'join-opened', node.name, f'A new PC may join without a code until {until}')
+                    return self.send(200, {'until': until})
+                if action == 'close-join':
+                    journal.set_meta('open_join_until', None)
+                    app.auth.log(self.u['display'], self.ip, 'join-closed', node.name, 'Joining without a code was closed')
+                    return self.send(200, {'ok': True})
                 if action == 'export-key':
+                    if not app.auth.verify_current_password(self.u, d.get('password')):
+                        app.auth.log(self.user, self.ip, 'authority-export-refused', node.name, 'Wrong password')
+                        raise Forbidden('Enter your own password to save the administrator key.')
                     if self.ip not in LOCAL_IPS:
                         raise Forbidden('For safety, save the administrator key on the administrator PC itself.')
                     if not node.is_authority or node.info.get('backup'):

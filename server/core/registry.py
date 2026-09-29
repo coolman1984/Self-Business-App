@@ -61,6 +61,10 @@ class Entity:
 
 def register(entity):
     """Adds (or replaces, when a module is upgraded in a test) an entity. Safe to call more than once."""
+    kinds = {js: kind for js, _, kind, _ in entity.fields}
+    for f in entity.money_fields:
+        if kinds.get(f) != I:
+            raise ValueError(f'{entity.name}.{f}: money fields must be whole numbers (kind int) in the smallest unit, never floats')
     ENTITIES[entity.name] = (entity.table, entity.title, list(entity.fields))
     COUNTERS[entity.name] = set(entity.counters)
     RESOLVERS[entity.name] = dict(entity.resolvers)

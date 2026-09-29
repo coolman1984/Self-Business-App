@@ -131,7 +131,7 @@ class Registers:
             elif fld == '_del':
                 w = max(es, key=lambda e: (e.prio, bool(e.value and e.value[0]), e.hlc, e.origin, e.cseq))
             elif rule == 'max':
-                w = max(es, key=lambda e: (e.prio, _cmp_value(e.value), e.hlc, e.origin, e.cseq))
+                w = max(es, key=lambda e: (e.prio, e.value is not None, _ord_value(e.value), e.hlc, e.origin, e.cseq))
             elif rule == 'min':  # the smallest value wins (earliest date, lowest number); empty values only if all are empty
                 top = max(e.prio for e in es)
                 best = [e for e in es if e.prio == top]

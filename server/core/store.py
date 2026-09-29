@@ -53,9 +53,13 @@ def _coerce(kind, v):
     if v is None or v == '' and kind in (I, R):
         return None
     if kind == I:
+        if isinstance(v, int) and not isinstance(v, bool):
+            return v
+        if isinstance(v, str) and re.fullmatch(r'\s*-?\d+\s*', v):
+            return int(v)  # exact, no float round trip
         try:
             return int(float(v))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return None
     if kind == R:
         try:
@@ -320,6 +324,12 @@ class Store:
                 raise BadRequest('Invalid file reference')
         if entity in META and META[entity].validate:
             META[entity].validate(row)  # raises BadRequest with a plain-words message
+        for js, col, kind_, label in fields:
+            v = row.get(js)
+            if v not in (None, '') and kind_ in (I, R) and _coerce(kind_, v) is None:
+                raise BadRequest(f'{label} must be a number')
+            if v not in (None, '') and kind_ == I and _coerce(kind_, v) is not None and isinstance(v, (float, str)) and float(v) != int(float(v)):
+                raise BadRequest(f'{label} must be a whole number (amounts are entered in the smallest unit)')
         vals = {col: _coerce(kind_, row.get(js)) for js, col, kind_, _ in fields}
         after = {'id': rid, **{js: _out(k, vals[col]) for js, col, k, _ in fields if vals[col] is not None}}
         if self.journal is not None:
@@ -436,12 +446,44 @@ class Store:
             raise BadRequest('An erase order can only be made on the administrator PC')
         if not str(reason or '').strip():
             raise BadRequest('A reason is required')
+        if not rid or not self.get(entity, rid, include_deleted=True):
+            raise BadRequest('Record not found')
         with self.lock:
             op = {'e': entity, 'id': rid, 'op': 'update', 's': {f: None for f in fields}, 'sc': None,
                   'erase': {'reason': str(reason)[:40], 'basis': str(basis or '')[:200], 'ref': str(ref or '')[:80]}}
             rec = self.journal.write('erase', [op], actor=actor, actor_id=actor_id, ip=ip, label='Legal erasure', authority=True)
             self.fold_pending()
         return {'txn': rec['env']['id']}
+
+    def scrub_logs(self, targets):
+        """After an erase order: blank the erased fields in the monthly audit files (data/logs/audit-*.jsonl) as well."""
+        for name in os.listdir(self.log_dir):
+            if not (name.startswith('audit-') and name.endswith('.jsonl')):
+                continue
+            path = os.path.join(self.log_dir, name)
+            changed, out = False, []
+            with open(path, encoding='utf-8') as f:
+                for line in f:
+                    try:
+                        e = json.loads(line)
+                    except ValueError:
+                        out.append(line)
+                        continue
+                    fields = targets.get((e.get('entity'), e.get('id')))
+                    if fields and isinstance(e.get('changes'), dict):
+                        for k in fields:
+                            if k in e['changes']:
+                                e['changes'][k] = [None, None]
+                                changed = True
+                        line = json.dumps(e, ensure_ascii=False) + '\n'
+                    out.append(line)
+            if changed:
+                tmp = path + '.tmp'
+                with open(tmp, 'w', encoding='utf-8') as f:
+                    f.writelines(out)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, path)
 
     def mark_initialized(self):
         with self.lock:
@@ -499,11 +541,11 @@ class Store:
     def log_activity(self, user, ip, events):
         self.journal.log_activity(user, ip, events[:500])
 
-    def query_log(self, kind, q='', user='', typ='', scope='', frm='', to='', limit=200, offset=0, scopes=None, node='', admin=True):
+    def query_log(self, kind, q='', user='', typ='', scope='', frm='', to='', limit=200, offset=0, scopes=None, node='', admin=True, search_values=True):
         if kind == 'activity':
             self.journal.flush_activity()
         return self.journal.query('audit' if kind == 'audit' else 'activity', q, user, typ, scope, frm, to, node, limit, offset, scopes,
-                                  business_only=not admin)
+                                  business_only=not admin, search_values=search_values)
 
     # ------------------------------------------------------------ conflicts and convergence
     def conflicts(self):
@@ -513,6 +555,8 @@ class Store:
         with self.lock:
             flags = self.conn.execute('SELECT * FROM sync_flags ORDER BY tbl, rid, kind').fetchall()
             for f in flags:
+                if f['tbl'] == FILES[0]:  # the same file recorded twice with a different type guess: cosmetic, nobody has to decide
+                    continue
                 entity, title = titles.get(f['tbl'], (f['tbl'], f['tbl']))
                 r = self.conn.execute(f'SELECT * FROM {f["tbl"]} WHERE id=?', (f['rid'],)).fetchone()
                 row = self._row_js(entity, r) if r else {'id': f['rid']}

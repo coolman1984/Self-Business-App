@@ -123,7 +123,8 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
             page_where.append(f'({order_col} IS NULL AND rowid {op} ?)' if desc else f'({order_col} IS NOT NULL OR rowid {op} ?)')
             page_args.append(last_rowid)
         else:
-            page_where.append(f'({order_col} {op} ? OR ({order_col} = ? AND rowid {op} ?))')
+            # NULL sorts first: descending, the NULL rows come after every non-NULL row
+            page_where.append(f'({order_col} {op} ? OR ({order_col} = ? AND rowid {op} ?)' + (f' OR {order_col} IS NULL)' if desc else ')'))
             page_args += [last_val, last_val, last_rowid]
     sql = (f'SELECT *, rowid AS _rowid FROM {table}' + (' WHERE ' + ' AND '.join(page_where) if page_where else '')
            + f' ORDER BY {order_col} {direction}, rowid {direction} LIMIT ?')

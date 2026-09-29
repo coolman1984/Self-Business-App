@@ -427,7 +427,18 @@ class SyncService:
             host, port = peer['address'], self.port
         started = time.time()
         rep = {'peer': peer['id'], 'name': peer['name'], 'address': peer['address'], 'pulled': 0, 'pushed': 0, 'deferred': 0, 'files': 0}
-        c = Connection(self, host, int(port), peer['fp'], peer['id'])
+        try:
+            port_number = int(port)
+            if not host or not 0 < port_number < 65536:
+                raise ValueError(port)
+        except (TypeError, ValueError):
+            st.update(state='error', fails=st.get('fails', 0) + 1, last_error='The address of this PC is not valid (write it like 192.168.1.20 or 192.168.1.20:8463).',
+                      error_kind='error', last_try=now())
+            rep['result'] = 'error'
+            rep['error'] = st['last_error']
+            self.save_status(peer['id'])
+            return rep
+        c = Connection(self, host, port_number, peer['fp'], peer['id'])
         try:
             with self.lock:
                 st['state'] = 'syncing'
@@ -874,6 +885,10 @@ class SyncService:
         (the owner's choice for a small, trusted team; Devices & Sync -> Remove takes a PC out again)."""
         if not self.node.is_authority or self.node.info.get('backup'):
             return 403, {'error': 'This is not the administrator PC. Choose the administrator PC.'}, 'application/json', {}
+        until = self.journal.meta('open_join_until')
+        if not until or until < now():
+            self.journal.alert('pairing', f'A PC at {ip} tried to join while joining was closed.', '', 'warning', key=f'pairing-closed|{ip}')
+            return 403, {'error': 'Joining is closed. The administrator must first choose "Allow a new PC to join" in Devices & Sync.'}, 'application/json', {}
         try:
             ok = len(bytes.fromhex(fields['pub'])) == 32 and len(bytes.fromhex(fields['cert_fp'])) == 32 and len(fields['node']) == 12
         except ValueError:

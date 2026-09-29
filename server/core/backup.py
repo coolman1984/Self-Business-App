@@ -153,6 +153,38 @@ class Backups:
                             'time': datetime.strptime(n[len(PREFIX):len(PREFIX) + 15], '%Y%m%d_%H%M%S').isoformat(timespec='seconds')})
         return sorted(out, key=lambda b: b['name'], reverse=True)
 
+    def scrub(self, targets):
+        """After an erase order: blank the erased fields inside every backup copy (this PC's backup folder and the second folders),
+        so the data subject's values do not survive in old backups. targets: {(entity, id): {js field, ...}}"""
+        from registry import ENTITIES
+        for base in [self.dir, *self.extra]:
+            folder = os.path.join(base, 'db')
+            if not os.path.isdir(folder):
+                continue
+            for name in sorted(os.listdir(folder)):
+                path = os.path.join(folder, name)
+                try:
+                    con = sqlite3.connect(path, isolation_level=None)
+                    con.row_factory = sqlite3.Row
+                    try:
+                        if NAME_RE.match(name):  # a copy of the business data
+                            for (entity, rid), fields in targets.items():
+                                if entity not in ENTITIES:
+                                    continue
+                                table, _, cols = ENTITIES[entity]
+                                col_of = {js: col for js, col, _, _ in cols}
+                                for js in fields:
+                                    if js in col_of:
+                                        con.execute(f'UPDATE {table} SET {col_of[js]}=NULL WHERE id=?', (rid,))
+                                        con.execute('DELETE FROM sync_field WHERE tbl=? AND rid=? AND fld=?', (table, rid, js))
+                                con.execute('DELETE FROM sync_flags WHERE tbl=? AND rid=?', (table, rid))
+                        elif name.startswith('journal_') and name.endswith('.db') and self.journal is not None:
+                            self.journal._redact_stored(con, targets)
+                    finally:
+                        con.close()
+                except (sqlite3.Error, OSError) as e:
+                    self.log(f'Backup {name} could not be scrubbed after an erase order: {e}')
+
     def restore(self, name, user='', ip='', user_id=''):
         """Brings the data back to the backup by saving the differences as a new change (see module doc).
         Returns (name of the safety backup taken first, result of the restore change)."""

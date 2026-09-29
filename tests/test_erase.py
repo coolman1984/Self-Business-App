@@ -117,31 +117,71 @@ class EraseTest(unittest.TestCase):
         finally:
             shutil.rmtree(d)
 
+    def _fresh_pc(self, label):
+        other = Peer(self.c.root, 'probe-' + label)
+        other.node.join(self.a.node.info['cluster_id'], self.a.node.info['authority_pub'], self.a.node.id)
+        self.a.journal.write('admin', [__import__('cluster').enroll_op(other.node)], actor='admin', label='enrol', authority=True)
+        return other
+
     def test_a_relay_cannot_alter_or_blank_values_of_another_pcs_change(self):
         self.make_area()
         self.a.commit('more', [{'e': 'areas', 'id': 'p2', 'op': 'put', 'row': {'name': 'Second', 'location': 'Cairo'}}])
-        import json
-        recs = self.a.journal.changes_since(self.x.journal.vv())[0]
+        recs = self.a.journal.changes_since({})[0]
         target = next(r for r in recs if b'Second' in r['o'].encode())
-        for label, mutate in (('altered value', lambda o: o.replace('Second', 'Hacked')),
-                              ('blanked value', lambda o: o.replace('"Second"', 'null'))):
-            forged = dict(target, o=mutate(target['o']))
-            other = Peer(self.c.root, 'probe-' + label.split()[0])
-            try:
-                other.node.join(self.a.node.info['cluster_id'], self.a.node.info['authority_pub'], self.a.node.id)
-                self.a.journal.write('admin', [__import__('cluster').enroll_op(other.node)], actor='admin', label='enrol', authority=True)
-                everything = self.a.journal.changes_since({})[0]
-                acc, _, problems = other.receive([forged if r['b'] == target['b'] else r for r in everything])
-                if label == 'altered value':
-                    self.assertTrue(problems, label)
-                    self.assertIsNone(other.store.get('areas', 'p2'))
-                else:
-                    # a blank is accepted on arrival (it looks like an erasure) but is reported by the integrity check
-                    rep = other.journal.verify(True)
-                    self.assertFalse(rep['ok'], label)
-                    self.assertIn('without an erase order', ' '.join(rep['problems']))
-            finally:
-                other.close()
+
+        def forged_delivery(mutate):
+            return [dict(r, o=mutate(r['o'])) if r['b'] == target['b'] else r for r in recs]
+
+        # 1. an altered value does not match its signed commitment: refused
+        other = self._fresh_pc('altered')
+        try:
+            _, _, problems = other.receive(forged_delivery(lambda o: o.replace('Second', 'Hacked')))
+            self.assertTrue(problems)
+            self.assertIsNone(other.store.get('areas', 'p2'))
+        finally:
+            other.close()
+        # 2. a blanked value that no erase order explains: the change waits, is not folded, and an alert is raised
+        other = self._fresh_pc('blanked')
+        try:
+            acc, deferred, _ = other.receive(forged_delivery(lambda o: o.replace('"Second"', 'null')))
+            self.assertGreater(deferred, 0)
+            self.assertIsNone(other.store.get('areas', 'p2'))
+            self.assertIn('integrity', [al['kind'] for al in other.journal.alerts()])
+        finally:
+            other.close()
+        # 3. the same blank IS accepted when the administrator PC's erase order for it arrives with it
+        self.a.store.erase('boss', '127.0.0.1', 'areas', 'p2', ['name'], 'pdpl-request')
+        other = self._fresh_pc('erased')
+        try:
+            other.receive(self.a.journal.changes_since({})[0])
+            row = other.store.get('areas', 'p2')
+            self.assertIsNotNone(row)
+            self.assertIsNone(row.get('name'))
+            self.assertEqual(row['location'], 'Cairo')
+            self.assertTrue(other.journal.verify(True)['ok'])
+        finally:
+            other.close()
+
+    def test_erasure_also_reaches_backups_and_the_audit_files(self):
+        from system import System
+        d = tempfile.mkdtemp()
+        try:
+            s = System(d, {}, os.path.join(d, 'up'), os.path.join(d, 'bk'), log=lambda m: None)
+            s.auth.setup('boss', 'The Boss', 'Strong-pass1', '127.0.0.1')
+            s.store.commit('u', 'ip', 'create', [{'e': 'areas', 'id': 'p9', 'op': 'put', 'row': {'name': 'N', 'description': SECRET}}])
+            s.store.commit('u', 'ip', 'edit', [{'e': 'areas', 'id': 'p9', 'op': 'put', 'ver': s.store.get('areas', 'p9')['ver'],
+                                                'row': {'name': 'N', 'description': SECRET + ' v2'}}])
+            s.backups.create('manual')
+            log_dir = os.path.join(d, 'logs')
+            everything = lambda: '\n'.join(open(os.path.join(dp, f), 'rb').read().decode('utf-8', 'ignore')  # noqa: E731
+                                            for dp, _, fs in os.walk(d) for f in fs if f.endswith(('.db', '.jsonl')))
+            self.assertIn(SECRET, everything())
+            s.store.erase('boss', '127.0.0.1', 'areas', 'p9', ['description'], 'pdpl-request')
+            self.assertNotIn(SECRET, everything(), 'values must not survive in backups, journal copies or audit files')
+            self.assertTrue(os.path.isdir(log_dir))
+            s.close()
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
 
     def test_record_ids_with_wildcards_and_arabic_letters_are_found(self):
         for rid in ('a_b%c', 'شخص_١', 'back\\slash'):

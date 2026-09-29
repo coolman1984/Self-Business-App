@@ -32,6 +32,13 @@ change (rule in `CLAUDE.md`).
   late change first. Lesson: mutation-check security tests.
 - Wire format change (envelope v2) broke the fork test, which built its own forged record — tests that hand-build wire records
   must use the shared helpers (`env_chash`, `signed_view`).
+- **External review of PR #1 found 15 real issues that 83 green tests and a self-review had missed.** Worth remembering: (1) my own
+  erase design left the erased values in backups made *before* the erase, in the monthly audit files, and even created a new
+  unredacted backup on purpose; (2) "accept and check later" for blanked values let a relay silently destroy data; (3) an
+  "easy join" inherited from BAMS was open to any device by default — a security feature that is optional in a document must be
+  closed in code; (4) new code paths for one route (`/api/audit`) skipped the masking that other routes had — mask in one shared
+  place next time. Lessons: always run an independent review before merging; write the regression test first for each finding.
+- The main branch did not exist; the owner allowed pushing the first commit as `main` so a pull request could be opened.
 - The auto-mode command classifier was unavailable for a long stretch in this session; file edits still worked, commands did not.
   Lesson: keep work committed in small steps so a tooling outage never strands a large uncommitted change.
 

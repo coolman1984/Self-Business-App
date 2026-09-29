@@ -1090,7 +1090,7 @@ class T36_BackupAdminPC(Base):
         ac.post('/api/devices/backup', {'id': pc2_id, 'on': True})
         wait_until(lambda: pc2.get('/api/users')['authority'], 40, what='pc2 became backup PC')
         with self.assertRaises(ApiError) as e:
-            pc2.post('/api/devices/export-key', {'passphrase': 'a long passphrase 2026'})
+            pc2.post('/api/devices/export-key', {'passphrase': 'a long passphrase 2026', 'password': ADMIN[1]})
         self.assertEqual(e.exception.code, 403)
         with self.assertRaises(ApiError):
             pc2.post('/api/devices/revoke', {'id': admin_id})
@@ -1145,9 +1145,15 @@ class T37_AdminSafety(unittest.TestCase):
         ac = self.ac
         self.assertFalse(ac.get('/api/devices')['key_saved'])
         with self.assertRaises(ApiError) as e:
-            ac.post('/api/devices/export-key', {'passphrase': 'too short'})
+            ac.post('/api/devices/export-key', {'passphrase': 'too short', 'password': ADMIN[1]})
         self.assertEqual(e.exception.code, 400)
-        box = ac.post('/api/devices/export-key', {'passphrase': 'a long passphrase 2026'})
+        with self.assertRaises(ApiError) as e:  # a hijacked session without the password gets nothing
+            ac.post('/api/devices/export-key', {'passphrase': 'a long passphrase 2026'})
+        self.assertEqual(e.exception.code, 403)
+        with self.assertRaises(ApiError) as e:
+            ac.post('/api/devices/export-key', {'passphrase': 'a long passphrase 2026', 'password': 'not-my-password-1'})
+        self.assertEqual(e.exception.code, 403)
+        box = ac.post('/api/devices/export-key', {'passphrase': 'a long passphrase 2026', 'password': ADMIN[1]})
         with open(os.path.join(self.S.data_dir, 'node', 'authority.key')) as f:
             seed = f.read().strip()
         self.assertNotIn(seed, json.dumps(box), 'the key is never sent readable')
@@ -1181,6 +1187,7 @@ class T38_OpenJoin(unittest.TestCase):
         cls.ac = make_authority(cls.A)
         cls.ac.post('/api/commit', {'label': 'data', 'ops': [area_op('J1', 'Joined One')]})
         cls.B = Server('newpc').start()
+        cls.ac.post('/api/devices/open-join', {'minutes': 30})  # joining without a code works only while the administrator has opened it
 
     @classmethod
     def tearDownClass(cls):
@@ -1209,6 +1216,14 @@ class T38_OpenJoin(unittest.TestCase):
         self.assertIn('Store PC', names)
         with self.assertRaises(ApiError):  # a set-up PC cannot join again
             bc.post('/api/join', {'address': self.A.sync_address, 'code': '', 'name': 'Again'})
+
+    def test_joining_is_closed_unless_the_administrator_opens_it(self):
+        ident = {'node': '0123456789ab', 'name': 'Rogue', 'pub': '44' * 32, 'cert_fp': '55' * 32, 'port': '8443', 'open': True}
+        self.ac.post('/api/devices/close-join', {})
+        st, r = self._sync_post('/sync/join', ident)
+        self.assertEqual(st, 403, r)
+        self.assertNotIn('Rogue', [n['name'] for n in self.ac.get('/api/devices')['nodes']])
+        self.ac.post('/api/devices/open-join', {'minutes': 30})
 
     def _sync_post(self, path, body):
         import ssl, http.client

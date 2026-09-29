@@ -11,7 +11,7 @@ backups (contain everything, incl. password hashes) · the journal (history).
 
 | Threat | Control |
 |---|---|
-| Unknown PC on the LAN joins or reads data | enrolment + pinned TLS certificates; revocation; (open-join "easy mode" only as an explicit setting) |
+| Unknown PC on the LAN joins or reads data | enrolment + pinned TLS certificates; revocation; joining without a code only inside a time window (1–60 min) that the administrator opens and that closes by itself (`open-join`), refused otherwise and reported as an alert |
 | Sniffing / MITM between PCs | TLS 1.3, pinned self-signed certificates (BAMS) |
 | A normal user or PC forges admin/permission changes | authority-key signatures on `admin` changesets, verified on every PC |
 | A PC changes someone else's password | password proof (BAMS: signature from a key derived from the old password) |
@@ -57,9 +57,12 @@ backups (contain everything, incl. password hashes) · the journal (history).
 
 Implementation notes: the erase order is `kind: erase` (priority 4, authority-signed, refused from any other PC); it blanks
 fields (not whole records) so the record's other data and its relations stay. Erased fields cannot be entered again on the same
-record. Files in the content-addressed store and derived indexes: the search index re-indexes the touched record; file removal
-by hash is still to build with the file module (TASKS). The route `/api/erase` needs `privacy.erase`, access to all data, the
-user's own password, the typed word ERASE, and takes a backup first.
+record. On every PC that accepts the order the copies outside the database are blanked too: the monthly audit files, every backup
+copy (business data and journal copies, in the backup folder and in the second folders) — see `Backups.scrub`, `Store.scrub_logs`.
+No backup is taken before an erase (it would keep the data). Files in the content-addressed store: file removal by hash is still to
+build with the file module (TASKS). The route `/api/erase` needs `privacy.erase`, access to all data, the user's own password and
+the typed word ERASE. A blank value in another PC's change is accepted only when an erase order covers it; otherwise the change
+waits and an integrity alert is raised.
 
 "Never delete anything" is not lawful in every case (PDPL right to erasure, retention limits). Design (ADR-008):
 

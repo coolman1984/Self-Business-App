@@ -58,7 +58,7 @@ class SearchIndex:
             if f not in hidden and row.get(f):
                 e = norm_email(row.get(f))
                 words += [norm_text(e), e]
-        title = next((str(row[k]) for k in (*m.name_fields, *m.search) if row.get(k)), row['id'])
+        title = next((str(row[k]) for k in (*m.name_fields, *m.search) if row.get(k) and k not in hidden), row['id'])
         sub = ' · '.join(str(row[k]) for k in m.subtitle_fields if row.get(k) not in (None, '') and k not in hidden)
         return ' '.join(w for w in words if w), title, sub, store._scope_of(entity, row)
 
