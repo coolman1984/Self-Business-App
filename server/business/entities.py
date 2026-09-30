@@ -255,6 +255,10 @@ BATCH_FIELDS = [('name', 'name', T, 'File'), ('at', 'at', T, 'When'), ('rows', '
                 ('updated_n', 'updated_n', I, 'Updated'), ('skipped_n', 'skipped_n', I, 'Skipped'), ('undone', 'undone', B, 'Undone')]
 
 
+# when two PCs move the same card at the same time, the furthest stage wins; "won" beats "lost" (a signed deal is not undone by a give-up)
+STAGE_RANK = [s for s in STAGES if s not in ('won', 'lost')] + ['lost', 'won']
+
+
 def register_all():
     view = lambda *p: {'view': p}  # noqa: E731
     register(Entity('parties', 'parties', 'People and companies', PARTY_FIELDS, resolvers={}, search=('name', 'name_en', 'legal_name', 'tags', 'city', 'tax_id'),
@@ -262,7 +266,7 @@ def register_all():
                     validate=v_party, perm_prefix='clients', index=('merged_into', 'status', 'kind', 'import_batch', 'sample')))
     register(Entity('party_roles', 'party_roles', 'Roles', ROLE_FIELDS, validate=v_role, perm_prefix='clients', index=('party_id', 'sample')))
     register(Entity('party_relations', 'party_relations', 'Relations', RELATION_FIELDS, validate=v_relation, perm_prefix='clients', index=('from_party', 'to_party', 'sample')))
-    register(Entity('opportunities', 'opportunities', 'Opportunities', OPPORTUNITY_FIELDS, resolvers={'stage': 'rank:' + ','.join(STAGES)},
+    register(Entity('opportunities', 'opportunities', 'Opportunities', OPPORTUNITY_FIELDS, resolvers={'stage': 'rank:' + ','.join(STAGE_RANK)},
                     search=('title', 'tags', 'next_step'), money_fields=('value_minor',), validate=v_opportunity, perm_prefix='sales', subtitle_fields=('stage',),
                     index=('party_id', 'stage', 'sample')))
     register(Entity('projects', 'projects', 'Projects', PROJECT_FIELDS, resolvers={'status': 'rank:' + ','.join(PROJECT_STATUS)}, search=('title', 'tags', 'description'),

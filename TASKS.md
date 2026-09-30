@@ -30,6 +30,29 @@ allowed later; annual licence per activity; freelancer module first).
 - [ ] 1.17 Installer data-folder permissions: `icacls` grants Administrators, SYSTEM and `{username}` (the account that runs Setup). If Setup is elevated with a different administrator account, the everyday user would lose access — verify on a real PC and switch to granting the original user
 - [ ] 1.18 Minor review notes not yet done: `reapply_erasures` scans the journal once per erased record at every start (add a marker); `Store.fingerprint()` holds the store lock while hashing; `web/index.html` has a hard-coded English placeholder (Phase 2 i18n); dead constants `journal.ADMIN_ENTITIES`, duplicate schema numbers in `sync`/`journal`
 
+## Phase 2 — design system and shell — DONE (review fixes pending in the PR)
+- [x] 2.1 Tokens, themes (morning, evening, navy, navy night, high contrast), fonts (IBM Plex Sans, OFL, bundled), Lucide icons; **contrast test** (`test_tokens.py`)
+- [x] 2.2 i18n Arabic + English, RTL through logical CSS; test for missing/unused keys, matching placeholders, no English words in Arabic (`test_i18n.py`)
+- [x] 2.3 UI kit (buttons, forms, tables, tabs, chips, cards, modal, side panel, toast + undo, menu, skeleton/empty/error states, picker, command palette, shortcuts sheet, offline banner, guided tour)
+- [x] 2.4 Shell: grouped sidebar (collapsible, drawer on phones), top bar (search, sync light, theme, language), module-registered navigation, quick-add registry
+- [x] 2.5 Login, first-run wizard (business name, activity, look, owner account), settings (look with live preview, business, account, about), help
+- [x] 2.6 Edge/Chrome app-window launch (`launcher.py`, `test_launcher.py`)
+- [x] 2.7 Real-browser tests (`test_ui.py`, 25) and visual matrix (`tests/visual/matrix.py`, uploaded by CI) — keyboard-only walkthrough, reduced motion, phone drawer, XSS check, offline banner
+- [ ] 2.8 Devices/sync screen and joining a second PC from the UI (wizard offers only "new business" for now) — Phase 11 (API exists)
+- [ ] 2.9 Team screen (add people, permissions, profiles) — API exists (`/api/users/*`), screen not built yet
+
+## Phase 3 — people, work, timeline, search, Today v1, import (in progress: review + PR)
+- [x] 3.1 Entities + permissions + profiles (`server/business/`): parties, roles, relations, opportunities, projects, tasks, appointments, notes, activities, inbox, attachments, services, custom fields, import batches
+- [x] 3.2 Clients: list with live Arabic-aware filter, client file (overview, timeline, work, notes, files), duplicate warning while typing, duplicates screen, merge by redirect (and un-merge)
+- [x] 3.3 Sales board (drag, or the Move menu for keyboard users), projects with progress, tasks (tick + undo, quick add), calendar (Saturday first), services, inbox
+- [x] 3.4 Today v1 (late, follow-ups due, today's schedule, coming days, pipeline, inbox) — server-side, scope and money aware
+- [x] 3.5 Timeline from the change log (complete, masked for money/sensitive, includes deleted records and merged duplicates)
+- [x] 3.6 Excel/CSV import: preview, column guess (Arabic + English headers), duplicate report (new / same / similar / repeated in file / invalid), fills only empty fields, backup first, undo (`tablefile.py`, `importer.py`)
+- [x] 3.7 Demo data (removable in one step, keeps what was edited), extra fields per client/project/opportunity
+- [x] 3.8 Multi-PC tests for the business entities (`test_business_sync.py`)
+- [ ] 3.9 Independent review (correctness, distributed, security) and fixes
+- [ ] 3.10 Quotes/agreements/invoices → Phase 4; contact-point table and price lists are not built (phone/e-mail are fields of the party for now, see DATA_MODEL §3)
+
 ## Test map
 | Area | File | Status |
 |---|---|---|
@@ -41,4 +64,12 @@ allowed later; annual licence per activity; freelancer module first).
 | search, normalisers | `tests/test_search.py` | green (11) |
 | layers, secrets, uploads | `tests/test_layers.py`, `test_secrets_in_logs.py` | green (6) |
 | several PCs, real processes | `tests/test_multinode.py` | 35 scenarios, green (last full run after the review fixes) |
-| visual matrix | `tests/visual/` | Phase 2 |
+| design tokens (contrast AA) | `tests/test_tokens.py` | green (2) |
+| translations | `tests/test_i18n.py` | green (9) |
+| pure browser code under Node | `tests/test_js_units.py` | green (7) |
+| app-window launcher | `tests/test_launcher.py` | green (6) |
+| interface shell in a real browser | `tests/test_ui.py` | green (25) |
+| business layer API (validation, search, scope, money, Today, timeline, duplicates, demo, 2,000-row import) | `tests/test_business.py` | green (24) |
+| business screens in a real browser | `tests/test_ui_business.py` | green (24) |
+| business entities on several PCs | `tests/test_business_sync.py` | green (8) |
+| visual matrix (screenshots, reviewed by eye) | `tests/visual/matrix.py` | run by CI, artefact `visual-matrix` |

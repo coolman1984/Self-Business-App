@@ -70,3 +70,23 @@ Ideas harvested from BAMS are listed in BAMS' own `IDEAS.md`; here only new idea
 ## 10. Browser app mode as a desktop window
 - **Idea:** `msedge --app=http://127.0.0.1:<port>` gives a native-looking window with zero dependencies.
 - 🇪🇬 البرنامج يفتح في شباك لوحده كأنه برنامج ويندوز، من غير ما نزود أي مكتبة.
+
+## 14. Screens register themselves
+- **Idea:** navigation, routes, quick-add items, palette commands and Today blocks are registered by each screen/module with one call each; no central file lists them.
+- 🇪🇬 أي شاشة أو نشاط جديد بيسجّل نفسه في القايمة والبحث والإضافة السريعة بسطر واحد، من غير ما نعدّل في ملفات مركزية.
+
+## 15. Errors as codes, texts by language
+- **Idea:** the server says `E:name_required|A name is required`; each language file has `err.name_required`; a test compares the codes in Python with the dictionaries.
+- 🇪🇬 السيرفر بيقول كود المشكلة، والشاشة بتقولها بلغة المستخدم. ومفيش رسالة إنجليزي بتظهر في وسط الكلام العربي.
+
+## 16. Import = read → report → decide → backup → save → undo
+- **Idea:** the analysis never saves; the report groups rows (new / same / similar / repeated / invalid); existing records only get their EMPTY fields filled; a backup is made first; every imported record carries the batch id so one click undoes it.
+- 🇪🇬 الاستيراد بيوريك التقرير الأول، وميكتبش فوق حاجة موجودة، وبيعمل نسخة احتياطية، وتقدر ترجّعه كله بضغطة.
+
+## 17. A theme preview is the theme
+- **Idea:** because tokens hang on `[data-theme]` (not only on `<html>`), a swatch simply carries the attribute and shows the real theme, with no duplicated colours.
+- 🇪🇬 مربع المعاينة بياخد نفس ألوان الشكل الحقيقي لأنه بيلبس نفس الخاصية، فمفيش ألوان مكررة.
+
+## 18. Undo instead of "are you sure"
+- **Idea:** finishing a task or deleting a record acts at once and offers *Undo* for 8 seconds; the undo is a new change, so history stays honest.
+- 🇪🇬 بدل ما نسألك «متأكد؟» كل مرة، بنعمل الحاجة وندّيك زرار «تراجع».

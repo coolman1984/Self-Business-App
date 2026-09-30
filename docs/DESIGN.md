@@ -125,3 +125,29 @@ Arabic/RTL · English/LTR · light · dark · font XL · 1440 px · 1280 px · 3
 loading · offline. Playwright screenshots per state in `tests/visual/` (stored as artefacts, reviewed each phase).
 Checklist: crowding, bad spacing, clipped text (Arabic is ~20–30% longer), mirrored icons, unclear buttons,
 inconsistent sizes, anything that looks "admin-panel".
+
+## 11. As built (Phase 2)
+
+- **Tokens** live in `web/css/tokens.css` (CSS custom properties). Themes are `[data-theme]` on `<html>`: `morning` (default, warm off-white with a deep green
+  sidebar and a copper accent), `evening` (dark), `navy` (light with a navy sidebar and an amber accent), `navynight`, `contrast` (black on white, yellow accent).
+  "Automatic" follows the system setting. `data-font` (`plex` or `system`), `data-size` (`s m l xl` = 13/14/15/17 px root size), `data-density`, `data-motion`.
+  `tests/test_tokens.py` computes WCAG contrast for every text/background pair of every theme (AA 4.5:1 text, 3:1 for icons, dots and the focus ring).
+- **Selectors are `[data-theme=...]`, not `:root[...]`**, so a swatch inside Settings can show another theme by carrying the attribute itself.
+- **Logical properties only** (`margin-inline-start`, `inset-inline-end` ...). Icons that point somewhere (arrows, chevrons, log-out, panel) are drawn for
+  left-to-right and mirrored by CSS in Arabic: write `arrow-right` for "forward" everywhere.
+- **Digits**: Western by default, Arabic-Indic per user (Settings → Look). Money is formatted from whole piastres; Arabic shows the symbol (ج.م).
+- **Shell** (`web/js/shell/shell.js`): the sidebar is built from `registerNav()` calls made by each screen/module; the top bar has search (Ctrl+K), the sync light,
+  theme and language switches, the quick-add button (built from `registerQuickAdd()`), shortcuts and help. On phones the sidebar becomes a drawer.
+- **Forms** are described as data (`ui/form.js`): the same look, validation and error placement for every record; dialogs open as a side panel (records) or a
+  centered box (questions). Errors from the server arrive as `E:<code>|English` and are shown through `err.<code>` in the user's language.
+- **Undo instead of "are you sure" wherever possible**: ticking a task and deleting a record show an *Undo* toast; the undo is a new change (nothing is rolled back).
+- **Guided tour**: 4 steps, once, restartable from Help; the spotlight is drawn with a giant box-shadow, the card is placed beside tall targets.
+- **Visual QA**: `tests/visual/matrix.py` produces ~70 screenshots (ar/en × themes × widths × text size × states); CI keeps them as an artefact. Findings of the
+  first review pass that were fixed: hard-coded server name under the brand, redundant quick-add buttons, comma style in English greetings, direction of chevrons
+  and forward arrows, tour card covering the menu it explains, crowded phone top bar, month names not following the digit setting.
+
+## 12. As built (Phase 3 screens)
+
+Client file = header (avatar, roles, call / WhatsApp / e-mail buttons) + tabs *Overview · Timeline · Work · Notes · Files*. Sales = board (drag or *Move* menu).
+Tasks = a table with a quick-add line. Calendar = month grid, Saturday first, dots on phones. Today = numbers, "needs your attention", today's schedule, coming days,
+pipeline; a new business sees a start card and an offer to load sample data. Import = three steps (file and columns → report → done) with per-row decisions.

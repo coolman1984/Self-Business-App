@@ -38,7 +38,7 @@ def compile_program(v4):
     run([sys.executable, '-m', 'nuitka', '--standalone', '--assume-yes-for-downloads', '--windows-console-mode=attach',
          f'--output-dir={BUILD}', '--output-filename=SBO.exe', f'--windows-icon-from-ico={os.path.join(BUILD, "sbo.ico")}',
          f'--company-name={DEVELOPER}', f'--product-name={PRODUCT}', f'--file-description={PRODUCT}', f'--file-version={v4}',
-         f'--product-version={v4}', f'--copyright={COPYRIGHT}', *[f'--include-module={m}' for m in modules], '--include-module=_assets',
+         f'--product-version={v4}', f'--copyright={COPYRIGHT}', *[f'--include-module={m}' for m in modules], '--include-module=_assets', '--include-package=business',
          '--nofollow-import-to=tkinter,unittest,pydoc,test', os.path.join('server', 'sbo_main.py')], env=env)
 
 

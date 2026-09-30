@@ -9,7 +9,7 @@ Read `CLAUDE.md` (rules) and `AGENT_HANDOFF.md` first. Designs live in `docs/`. 
 a new rule, pitfall, file or command.
 
 ## Layers (a test enforces them from Phase 1)
-`core` (domain-free engine from BAMS) → `platform` (shared business kernel) → `modules/*` (activities) ;
+`core` (domain-free engine from BAMS) → `server/business/` (shared business kernel; NOT named `platform`) → `modules/*` (activities) ;
 `connectors/*` only through ports; `web/*` never decides permissions.
 
 ## Invariants
@@ -36,6 +36,27 @@ python3 -m unittest discover -s tests
 `tests/engine_domain.py` test-only domain (never shipped; sets a fast KDF for tests) · `tools/`, `installer/`, `.github/workflows/build.yml`.
 Tests: `cd tests && python3 -m unittest test_unit test_convergence test_erase test_resolvers test_auth test_query test_search test_layers`
 (fast, ~1 min) and `test_multinode` (real processes, ~2 min; do not edit `server/` while it runs).
+
+## Where things are (Phases 2-3)
+`web/css/{tokens,base,components,shell}.css` design system · `web/js/core/` (api, dom, domain, format, prefs, router, session, textnorm) · `web/js/ui/` (kit, form, overlay,
+palette, keys, quick, tour, timeline, icons) · `web/js/shell/shell.js` · `web/js/views/*` one file per screen (`dialogs.js` holds every create/edit form) · `web/js/i18n/{ar,en}.js`
+(one key per line, single quotes — a test parses them) · `server/business/` (entities, perms, api, today, timeline, importer, dedupe, demo, constants) · `server/core/tablefile.py`
+(xlsx/csv reader) · `server/core/launcher.py` (app window).
+Tests: add `test_tokens test_i18n test_launcher test_business test_business_sync` to the fast list; browser tests need Playwright:
+`SBO_PWLIB=/tmp/claude-0/pwlib python3 -m unittest test_js_units test_ui test_ui_business` (CI sets `SBO_REQUIRE_UI=1`).
+Visual matrix: `SBO_PWLIB=... python3 tests/visual/matrix.py [--quick]` → `tests/visual/out/` (look at the pictures!).
+
+## Rules learned in Phases 2-3
+- A record is saved as a **whole** `put` with the `ver` you read; a missing field means "cleared". Screens build the row from the current record (`domain.updateRecord`).
+- New user-visible word → `t('key')` in BOTH dictionaries; groups built dynamically (`t('stage.' + id)`) are checked against `server/business/constants.py`.
+- New server rule → `bad('code', 'English')`; add `err.code` to both dictionaries (a test compares).
+- Screens register themselves: `registerNav`, `route`, `registerQuickAdd`, `registerCommand`, `registerTodayBlock` (no central list to edit).
+- Icons drawn for LTR; directional ones mirror by CSS. Use `arrow-right` / `chevron-right` for "forward".
+- `[data-theme]` selectors (not `:root[...]`) so swatches can preview a theme.
+- Playwright `wait_for_function` with an element-returning string trips the CSP (`unsafe-eval` refused): wait for a selector instead.
+- Passwords must not contain the user name or the full name (server rule) — remember it in tests.
+- Search: index both a word and its form without the article "ال" (`search._with_bare_words`), because people type both.
+- Registry entities registered by one test file must be removed again (`test_business_sync.tearDownModule`) or later files in the same process see them.
 
 ## Pitfalls learned (add new ones here)
 - After renaming a prefix, grep for numeric slices of the renamed strings (`name[4:]`); use a constant.

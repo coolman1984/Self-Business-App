@@ -5,6 +5,34 @@ change (rule in `CLAUDE.md`).
 
 ---
 
+## Phases 2 and 3 — design system, shell, people, work, Today, import (2026-09-30, in review)
+
+**What:** the whole interface (no build step, plain ES modules): tokens/themes/fonts/icons, i18n Arabic + English with a test that reads the dictionaries, UI kit, shell,
+login + first-run wizard + settings, command palette, tour, Edge app window; then the business kernel (`server/business/`) and its screens: clients and the client file,
+timeline, sales board, projects, tasks, calendar, services, inbox, Today v1, Excel/CSV import, sample data, extra fields. Details: `TASKS.md`, `docs/DESIGN.md` §11-12,
+`docs/DATA_MODEL.md` §8, ADR-021..026.
+
+**Numbers:** 9 new test files; UI journeys run in a real Chromium (49 browser tests), backend API tests (24), several-PC tests (8), the 2,000-row messy Excel test.
+
+**Mistakes / lessons**
+- I deleted `web/js/quick.js` and `web/css/app.css` while replacing the placeholder page; the personal-link page still loads them (an existing test caught it in review of my own diff).
+  Lesson: grep for a file name in `server/` before deleting anything under `web/`.
+- The first version of the palette compared raw text, so "اعدادات" did not find "الإعدادات". Fixed by folding text the same way the server does (`textnorm.js`), and the server index
+  now also stores each word without the article "ال". Lesson: every place that compares Arabic text needs the same folding, on both sides.
+- A record edit is a **whole** `put`. My first settings save sent only the changed key and the server (correctly) answered *conflict*, because the row existed with a version. Lesson:
+  one helper (`domain.updateRecord`, `api.saveSettings`) reads the current version and sends everything; screens never build ops by hand.
+- Loading the sample data twice after keeping one edited demo record crashed with *conflict* (same id). The loader now skips records that already exist. Found by a test that removes and
+  reloads.
+- A test helper (`wait_for_function` with an element-returning string) was refused by our own CSP (`unsafe-eval`). The CSP is right; the test waits for a selector.
+- The drawer's backdrop had a higher z-index than the drawer on phones, so nothing in the menu was clickable. Found by the phone test, not by looking.
+- The tour card covered the menu it explains; chevrons pointed the wrong way in English; the top bar was crowded on a phone; month names ignored the digit setting. All found by looking at the
+  screenshots of the visual matrix (as the brief demands), none by the functional tests.
+- `Intl.NumberFormat` with `currencyDisplay: 'name'` printed "جنيه مصري" on every card; the symbol (ج.م) is shorter and clearer.
+- Registering business entities inside one test module leaked into the next ones in the same process; the module now restores the registry in `tearDownModule`.
+- Search hit lists must open the *record*, not `/parties/<id>`: a small `openRecord()` maps entities to pages or edit forms.
+
+**Not done on purpose (see TASKS):** team screen, devices/sync screen, contact-points table, quotes and invoices (Phase 4).
+
 ## Phase 1 — core engine (2026-09-29, in progress)
 
 **What:** the BAMS engine (5f5b3ce) was harvested into `server/core/` and made domain-free; new pieces written on top
