@@ -42,6 +42,8 @@ class Entity:
     sensitive_fields: tuple = ()                  # hidden from users without the permission data.sensitive
     immutable: bool = False                       # write-once record (issued documents): the earliest write wins, edits are refused
     validate: Optional[Callable] = None           # fn(row) raising store.BadRequest with a plain-words message
+    check: Optional[Callable] = None              # fn(row, rid, conn) for rules that need the stored data (raise store.BadRequest)
+    search_skip: Optional[Callable] = None        # fn(row) -> True when the record must not appear in search (e.g. merged away)
     perm_prefix: Optional[str] = None             # 'clients' -> clients.view / .create / .edit / .delete
     perms: dict = field(default_factory=dict)     # explicit {'view'|'insert'|'update'|'delete': (permission, ...)}; any one is enough
     index: tuple = ()                             # extra columns to index

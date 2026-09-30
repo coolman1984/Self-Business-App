@@ -53,7 +53,7 @@ class SearchIndex:
     # ------------------------------------------------------------ building
     def _doc(self, store, entity, row):
         m = META.get(entity)
-        if m is None or not m.search:
+        if m is None or not m.search or (m.search_skip and m.search_skip(row)):
             return None
         hidden = set(m.money_fields) | set(m.sensitive_fields)
         words = [_with_bare_words(norm_text(row.get(f))) for f in m.search if f not in hidden and row.get(f) not in (None, '')]

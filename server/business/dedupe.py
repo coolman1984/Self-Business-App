@@ -69,22 +69,24 @@ def groups(idx):
             parent[x] = parent[parent[x]]
             x = parent[x]
         return x
-    why = {}
-    for kind, table in (('phone', idx.phone), ('email', idx.email), ('name', idx.name)):
-        for k, ids in table.items():
-            if len(ids) > 1:
-                for other in ids[1:]:
-                    a, b = find(ids[0]), find(other)
-                    if a != b:
-                        parent[a] = b
-                    why.setdefault(find(ids[0]), set()).add(kind)
-    out = {}
+    for table in (idx.phone, idx.email, idx.name):
+        for ids in table.values():
+            for other in ids[1:]:
+                a, b = find(ids[0]), find(other)
+                if a != b:
+                    parent[a] = b
+    members = {}
     for i in idx.rows:
-        out.setdefault(find(i), []).append(i)
+        members.setdefault(find(i), []).append(i)
     res = []
-    for root, ids in out.items():
-        if len(ids) > 1:
-            kinds = set().union(*[why.get(find(i), set()) for i in ids]) if ids else set()
-            res.append({'ids': ids, 'why': sorted(kinds), 'strong': bool(kinds & {'phone', 'email'})})
-    res.sort(key=lambda g: (not g['strong'], -len(g['ids'])))
+    for ids in members.values():
+        if len(ids) < 2:
+            continue
+        inside = set(ids)
+        kinds = set()
+        for kind, table in (('phone', idx.phone), ('email', idx.email), ('name', idx.name)):
+            if any(len(inside & set(v)) > 1 for v in table.values()):
+                kinds.add(kind)
+        res.append({'ids': sorted(ids), 'why': sorted(kinds), 'strong': bool(kinds & {'phone', 'email'})})     # sorted: the same answer on every PC
+    res.sort(key=lambda g: (not g['strong'], -len(g['ids']), g['ids'][0]))
     return res

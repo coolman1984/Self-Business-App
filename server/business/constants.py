@@ -20,7 +20,7 @@ ACTIVITY_KINDS = ['call', 'meeting', 'message', 'email', 'visit']
 SOURCES = ['referral', 'social', 'website', 'walk_in', 'event', 'other']
 SERVICE_UNITS = ['hour', 'session', 'project', 'month', 'item']
 FIELD_TYPES = ['text', 'number', 'date', 'choice']
-CUSTOMIZABLE = ['parties', 'projects', 'opportunities']
+CUSTOMIZABLE = ['parties']            # extra fields exist for people and companies first; projects / opportunities when a screen for them exists
 
 META = {
     'partyKinds': PARTY_KINDS, 'roles': ROLES, 'relationKinds': RELATION_KINDS, 'stages': STAGES, 'openStages': OPEN_STAGES,

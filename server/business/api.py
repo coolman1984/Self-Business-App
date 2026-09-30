@@ -46,6 +46,7 @@ def add_routes(app):
         h.send(200, importer.preview(sheets, int(d.get('sheet') or 0), int(d.get('headerRow') or 0)))
 
     def imp_analyze(h):
+        h.need('clients.view')                # the report shows who already exists
         d = h.json_body()
         sheets = importer.open_upload(app, d.get('src'))
         a = importer.analyze(app, h.access(), sheets, int(d.get('sheet') or 0), int(d.get('headerRow') or 0), d.get('mapping') or {}, d.get('role') or 'lead', country)
@@ -65,10 +66,9 @@ def add_routes(app):
 
     def imp_commit(h):
         d = h.json_body()
-        a = analyses.get(d.get('token'), h.u['id'])
+        a = analyses.take(d.get('token'), h.u['id'])          # used once: a double click or a second request finds nothing
         overrides = {str(k): v for k, v in (d.get('overrides') or {}).items() if v in ('create', 'fill', 'skip')}
         report = importer.run_import(app, h.u, h.ip, a, overrides, a.get('filename', 'file'), country)
-        analyses.items.pop(d.get('token'), None)
         app.say(f'Import by {h.user}: {report["created"]} new, {report["filled"]} filled, {report["skipped"]} skipped, backup {report["backup"]}')
         h.send(200, report)
 

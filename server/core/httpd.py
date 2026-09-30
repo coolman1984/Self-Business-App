@@ -248,6 +248,8 @@ class App:
                         raise Forbidden('You can only work inside the areas assigned to you.')
                     if not {c.get('scope'), c.get('scope_before', c.get('scope'))} <= scopes:
                         raise Forbidden('You can only change the records assigned to you.')
+                elif mode == 'scopes':
+                    raise Forbidden('You can only work inside the areas assigned to you.')   # this kind of record has no areas: closed for limited users
                 elif mode == 'own' and op != 'insert':
                     r = self.store.conn.execute(f'SELECT created_by_id FROM {ENTITIES[e][0]} WHERE id=?', (c['id'],)).fetchone()
                     if not r or not r[0] or r[0] != u['id']:
@@ -271,7 +273,7 @@ class App:
                 continue
             for f in hidden:
                 op['row'].pop(f, None)
-            cur = self.store.get(op['e'], op.get('id'))
+            cur = self.store.get(op['e'], op.get('id'), include_deleted=True)   # also a deleted record: "Undo" must not blank hidden values
             if cur:
                 for f in hidden:
                     if cur.get(f) is not None:

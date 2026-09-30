@@ -10,14 +10,17 @@ import csv
 import io
 import re
 import zipfile
+import zlib
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from xml.etree import ElementTree as ET
 
 MAX_ROWS = 50000
 MAX_COLS = 200
-MAX_PART = 60 * 1048576
-MAX_TOTAL = 200 * 1048576
+MAX_PART = 20 * 1048576         # one XML part, uncompressed (the parser keeps the whole tree in memory)
+MAX_TOTAL = 80 * 1048576
+MAX_CELLS = 1000000
+MAX_TEXT = 30000                # characters in one cell
 NS = {'m': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main', 'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
       'rel': 'http://schemas.openxmlformats.org/package/2006/relationships'}
 
@@ -31,7 +34,7 @@ def _xml(z, name):
     if info.file_size > MAX_PART:
         raise BadFile('The file is too large')
     data = z.read(name)
-    if b'<!DOCTYPE' in data[:2000] or b'<!ENTITY' in data[:20000]:
+    if b'<!' in data.replace(b'<!--', b'').replace(b'<![CDATA[', b''):   # no DOCTYPE / ENTITY declarations anywhere (comments and CDATA are fine)
         raise BadFile('The file has unsafe content')
     try:
         return ET.fromstring(data)
@@ -72,9 +75,13 @@ def _date_styles(z):
 
 
 def _number(v):
+    if len(v) > 40:
+        return v
     try:
         d = Decimal(v)
     except InvalidOperation:
+        return v
+    if not d.is_finite() or abs(d.adjusted()) > 30:      # 1E999999 would build a gigantic integer and freeze the program
         return v
     if d == d.to_integral_value():
         return str(int(d))
@@ -84,10 +91,12 @@ def _number(v):
 def _serial_to_iso(v):
     try:
         d = Decimal(v)
-    except InvalidOperation:
+        if not d.is_finite() or not 0 < d < 3000000:
+            return v
+        base = datetime(1899, 12, 30)
+        dt = base + timedelta(days=float(d))
+    except (InvalidOperation, OverflowError, ValueError):
         return v
-    base = datetime(1899, 12, 30)
-    dt = base + timedelta(days=float(d))
     return dt.date().isoformat() if d == d.to_integral_value() or dt.hour == dt.minute == 0 else dt.isoformat(timespec='minutes')
 
 
@@ -97,6 +106,13 @@ def read_xlsx(data):
         z = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile as e:
         raise BadFile('This is not an .xlsx file') from e
+    try:
+        return _read_zip(z)
+    except (zipfile.BadZipFile, KeyError, ValueError, OverflowError, IndexError, RecursionError, zlib.error, EOFError) as e:
+        raise BadFile('The file is damaged') from e
+
+
+def _read_zip(z):
     with z:
         if sum(i.file_size for i in z.infolist()) > MAX_TOTAL:
             raise BadFile('The file is too large')
@@ -111,6 +127,7 @@ def read_xlsx(data):
         wb = _xml(z, 'xl/workbook.xml')
         rels = {r.get('Id'): r.get('Target') for r in _xml(z, 'xl/_rels/workbook.xml.rels').iterfind('rel:Relationship', NS)}
         sheets = []
+        total_cells = 0
         for s in wb.iterfind('m:sheets/m:sheet', NS):
             target = rels.get(s.get('{%s}id' % NS['r']), '')
             path = target.lstrip('/') if target.startswith('/') else 'xl/' + target
@@ -122,6 +139,8 @@ def read_xlsx(data):
                 if len(rows) >= MAX_ROWS:
                     raise BadFile('The sheet has more than %d rows' % MAX_ROWS)
                 idx = int(row.get('r', len(rows) + 1)) - 1
+                if idx >= MAX_ROWS:
+                    raise BadFile('The sheet has more than %d rows' % MAX_ROWS)
                 while len(rows) < idx:
                     rows.append([])
                 cells = []
@@ -145,7 +164,10 @@ def read_xlsx(data):
                         val = v.text
                     else:
                         val = _serial_to_iso(v.text) if style in dates else _number(v.text)
-                    cells.append(val.strip() if isinstance(val, str) else val)
+                    cells.append(val.strip()[:MAX_TEXT] if isinstance(val, str) else val)
+                    total_cells += 1
+                    if total_cells > MAX_CELLS:
+                        raise BadFile('The file has too many cells')
                 while cells and cells[-1] == '':
                     cells.pop()
                 rows.append(cells)
@@ -165,13 +187,17 @@ def read_csv(data):
     head = text[:4096]
     delim = max((',', ';', '\t'), key=lambda d: head.count(d))
     rows = []
-    for r in csv.reader(io.StringIO(text), delimiter=delim):
-        if len(rows) >= MAX_ROWS:
-            raise BadFile('The file has more than %d rows' % MAX_ROWS)
-        r = [c.strip() for c in r[:MAX_COLS]]
-        while r and r[-1] == '':
-            r.pop()
-        rows.append(r)
+    csv.field_size_limit(MAX_TEXT * 4)
+    try:
+        for r in csv.reader(io.StringIO(text), delimiter=delim):
+            if len(rows) >= MAX_ROWS:
+                raise BadFile('The file has more than %d rows' % MAX_ROWS)
+            r = [c.strip()[:MAX_TEXT] for c in r[:MAX_COLS]]
+            while r and r[-1] == '':
+                r.pop()
+            rows.append(r)
+    except csv.Error as e:
+        raise BadFile('The text file is damaged') from e
     return [{'name': 'CSV', 'rows': rows}]
 
 

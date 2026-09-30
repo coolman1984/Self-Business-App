@@ -312,12 +312,16 @@ class Import(BusinessBase):
         self.assertTrue(any('bad_phone' in r['warn'] for r in warn))
         mt = next(r for r in an['rows'] if r['status'] == 'match')
         self.assertEqual((mt['match'], mt['action']), ('exist-1', 'fill'))
-        backups_before = len(os.listdir(os.path.join(self.srv.root, 'backups', 'db')))
         rep = self.ac.post('/api/import/commit', {'token': an['token'], 'overrides': {}})
         self.assertGreaterEqual(rep['created'], 2000 - 1)
         self.assertEqual(rep['filled'] + rep['unchanged'], 1)
         self.assertEqual(rep['failed'], [])
-        self.assertGreater(len(os.listdir(os.path.join(self.srv.root, 'backups', 'db'))), backups_before, 'a backup is made before importing')
+        import sqlite3
+        path = os.path.join(self.srv.root, 'backups', 'db', rep['backup'])
+        self.assertTrue(rep['backup'].endswith('pre-import.db') and os.path.exists(path), 'a backup is made before importing')
+        db = sqlite3.connect(path)
+        self.assertEqual(db.execute('SELECT COUNT(*) FROM parties WHERE import_batch=?', (rep['batch'],)).fetchone()[0], 0, 'the backup holds the state BEFORE the import')
+        db.close()
         after = self.ac.get('/api/get/parties/exist-1')
         self.assertEqual((after['name'], after['city'], after['phone']), (before_notes['name'], 'الجيزة', before_notes['phone']), 'existing values are never overwritten')
         # phones are stored normalised, companies became organisations linked with works_at, birthday is ISO
@@ -331,7 +335,9 @@ class Import(BusinessBase):
         # the whole import can be undone in one step; the existing client stays
         undo = self.ac.post('/api/import/undo', {'batch': rep['batch']})
         self.assertGreaterEqual(undo['removed'], 2000 - 1)
-        self.assertEqual(self.ac.get('/api/q/parties?f=import_batch:eq:' + rep['batch'] + '&limit=1')['total'], 0)
+        left = self.ac.get('/api/q/parties?f=import_batch:eq:' + rep['batch'] + '&limit=5')['rows']
+        self.assertEqual([(r['kind'], r['name']) for r in left], [('org', 'شركة الأفق')], 'the company stays: the existing client that was filled in works there')
+        self.assertEqual(undo['kept'], 1)
         self.assertEqual(self.ac.get('/api/get/parties/exist-1')['name'], 'موجود قبل كده')
 
     def test_analysis_belongs_to_its_creator(self):

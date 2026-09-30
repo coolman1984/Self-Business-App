@@ -15,6 +15,7 @@ import json
 from registry import ENTITIES, META, scope_of
 
 MAX_LIMIT = 500
+STAMP_COLS = {'_created': 'created_at', '_updated': 'updated_at'}   # when a record was added / last changed (filter and sort by them)
 OPERATORS = {'eq': '=', 'ne': '!=', 'lt': '<', 'lte': '<=', 'gt': '>', 'gte': '>='}
 
 
@@ -64,6 +65,8 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
     for field, op, value in filters or []:
         if field == 'id':
             col = 'id'
+        elif field in STAMP_COLS:
+            col = STAMP_COLS[field]
         elif field in cols:
             col = cols[field][0]
         else:
@@ -100,6 +103,8 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
             else:
                 where.append(f'{cols[fk][0]} IN (SELECT id FROM {ptable} WHERE {pcol} IN ({",".join("?" * len(access["scopes"])) or "NULL"}))')
                 args += list(access['scopes'])
+        else:
+            where.append('0')   # a user limited to some areas sees nothing of a kind of record that has no areas (fail closed)
     elif mode == 'own':
         where.append('created_by_id=?')
         args.append(access['user_id'])
@@ -110,8 +115,8 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
             where.append('(' + ' OR '.join(f"{c} LIKE ? ESCAPE '\\'" for c in like_cols) + ')')
             q = '%' + str(search).replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
             args += [q] * len(like_cols)
-    order_col = cols[sort][0] if sort in cols else 'rowid'
-    if sort and sort not in cols and sort != 'rowid':
+    order_col = cols[sort][0] if sort in cols else STAMP_COLS.get(sort, 'rowid')
+    if sort and sort not in cols and sort != 'rowid' and sort not in STAMP_COLS:
         raise QueryError(f'Cannot sort by {sort}')
     direction = 'DESC' if desc else 'ASC'
     op = '<' if desc else '>'

@@ -331,6 +331,8 @@ class Store:
                 raise BadRequest('Invalid file reference')
         if entity in META and META[entity].validate:
             META[entity].validate(row)  # raises BadRequest with a plain-words message
+        if entity in META and META[entity].check:
+            META[entity].check(row, rid, c)
         for js, col, kind_, label in fields:
             v = row.get(js)
             if v not in (None, '') and kind_ in (I, R) and _coerce(kind_, v) is None:
@@ -369,7 +371,8 @@ class Store:
                     'before': b, 'after': after}, rop
         if cur:  # previously deleted row that is being re-created
             old = self._row_js(entity, cur)
-            s = {js: after.get(js) for js in names if js not in counters}
+            # only the fields that differ from the deleted record travel: an "Undo" must not overwrite what another PC changed meanwhile
+            s = {js: after.get(js) for js in names if js not in counters and after.get(js) != old.get(js)}
             n = {k: (after.get(k) or 0) - (old.get(k) or 0) for k in counters}
         else:
             s = {js: v for js, v in after.items() if js != 'id' and js not in counters}

@@ -1,6 +1,7 @@
 """The business entities on several PCs that work at the same time (offline) and meet later: nothing is lost, every PC ends with
 the same data, and the merge rules do what a person would expect. In-process PCs (no network), business entities registered for
 the duration of this file only."""
+import json
 import os
 import shutil
 import sys
@@ -11,13 +12,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'server'))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'server', 'core'))
 
 import registry  # noqa: E402
-_SNAP = {n: (dict(getattr(registry, n)) if isinstance(getattr(registry, n), dict) else set(getattr(registry, n)))
-         for n in ('ENTITIES', 'META', 'COUNTERS', 'RESOLVERS', 'SPECS', 'REPLICATED')}
-
 import business  # noqa: E402
-from cluster import Cluster  # noqa: E402
+from cluster import Cluster  # noqa: E402   (registers the engine test domain)
 
-business.register()
+_SNAP = {}
+
+
+def setUpModule():
+    """Registers the business entities for THIS file only (a unittest run imports every module before running any test)."""
+    for n in ('ENTITIES', 'META', 'COUNTERS', 'RESOLVERS', 'SPECS', 'REPLICATED'):
+        v = getattr(registry, n)
+        _SNAP[n] = dict(v) if isinstance(v, dict) else set(v)
+    business.register()
 
 
 def tearDownModule():
@@ -45,6 +51,8 @@ class Concurrent(unittest.TestCase):
         self.c.converge()
         fps = self.c.fingerprints()
         self.assertEqual(len(set(fps)), 1, 'all PCs end with identical data')
+        confl = {json.dumps([{**c, 'row': {k: v for k, v in c['row'].items() if k != 'ver'}} for c in p.store.conflicts()], sort_keys=True, default=str) for p in self.c.peers}   # ver is a local counter
+        self.assertEqual(len(confl), 1, 'and see the same things to decide')
 
     def test_two_people_add_different_records_offline_and_both_are_kept(self):
         put(self.a, 'parties', 'p-a', {'name': 'من الجهاز الأول'})
@@ -65,7 +73,7 @@ class Concurrent(unittest.TestCase):
         r = row(self.d, 'parties', 'p1')
         self.assertEqual((r['phone'], r['city']), ('+201000000002', 'القاهرة'))
 
-    def test_task_finished_on_one_pc_and_reopened_on_another_ends_finished(self):
+    def test_task_finished_on_one_pc_and_still_being_worked_on_another_ends_finished(self):
         put(self.a, 'tasks', 't1', {'title': 'مهمة', 'status': 'todo'})
         self.c.converge()
         va, vb = row(self.a, 'tasks', 't1')['ver'], row(self.b, 'tasks', 't1')['ver']
@@ -98,7 +106,8 @@ class Concurrent(unittest.TestCase):
         for peer in (self.a, self.b):
             for op in demo.build('ar', ['trainer']):
                 peer.commit('demo', [op])
-        self.meet()
+        self.c.converge()
+        self.assertEqual(len({p.store.fingerprint() for p in self.c.peers}), 1)
         n = self.a.store.conn.execute('SELECT COUNT(*) FROM parties WHERE deleted=0').fetchone()[0]
         self.assertEqual(n, 8)
 
@@ -125,6 +134,57 @@ class Concurrent(unittest.TestCase):
         self.assertIsNotNone(row(self.d, 'notes', 'n-late'), 'the note is kept')
         self.assertIsNone(row(self.d, 'parties', 'gone'))
         self.assertIsNotNone(self.d.store.get('parties', 'gone', include_deleted=True), 'the client is in the recycle bin, restorable')
+
+    def test_undo_of_a_delete_does_not_overwrite_what_another_pc_changed_meanwhile(self):
+        put(self.a, 'tasks', 'u1', {'title': 'Original', 'notes': 'first', 'status': 'todo'})
+        self.c.converge()
+        snap = {k: v for k, v in row(self.a, 'tasks', 'u1').items() if k not in ('id', 'ver')}
+        v = row(self.a, 'tasks', 'u1')['ver']
+        self.a.commit('del', [{'e': 'tasks', 'id': 'u1', 'op': 'del', 'ver': v}])
+        put(self.b, 'tasks', 'u1', {'title': 'Edited on B', 'notes': 'B notes', 'status': 'todo'}, row(self.b, 'tasks', 'u1')['ver'])
+        put(self.a, 'tasks', 'u1', snap)                         # the Undo button on A: writes the old snapshot back, no version
+        self.meet()
+        r = row(self.d, 'tasks', 'u1')
+        self.assertIsNotNone(r, 'the task is back')
+        self.assertEqual((r['title'], r['notes']), ('Edited on B', 'B notes'), "B's edit survives A's Undo")
+
+    def test_done_at_and_lost_reason_travel_with_the_winning_status(self):
+        put(self.a, 'tasks', 'f1', {'title': 't', 'status': 'todo'})
+        put(self.a, 'opportunities', 'f2', {'title': 'o', 'stage': 'offer'})
+        self.c.converge()
+        put(self.a, 'tasks', 'f1', {'title': 't', 'status': 'done', 'done_at': '2026-10-01T10:00:00'}, row(self.a, 'tasks', 'f1')['ver'])
+        put(self.b, 'tasks', 'f1', {'title': 't', 'status': 'cancelled'}, row(self.b, 'tasks', 'f1')['ver'])
+        put(self.a, 'opportunities', 'f2', {'title': 'o', 'stage': 'lost', 'lost_reason': 'price', 'closed_at': '2026-10-01'}, row(self.a, 'opportunities', 'f2')['ver'])
+        put(self.b, 'opportunities', 'f2', {'title': 'o', 'stage': 'won', 'closed_at': '2026-10-02'}, row(self.b, 'opportunities', 'f2')['ver'])
+        self.meet()
+        t = row(self.d, 'tasks', 'f1')
+        self.assertEqual(t['status'], 'cancelled')
+        self.assertNotIn('done_at', t, "the finish time of the losing 'done' is not kept next to 'cancelled'")
+        o = row(self.d, 'opportunities', 'f2')
+        self.assertEqual(o['stage'], 'won')
+        self.assertNotIn('lost_reason', o)
+        self.assertEqual(o['closed_at'], '2026-10-02')
+
+    def test_merge_and_archive_at_the_same_time_end_merged(self):
+        put(self.a, 'parties', 'k1', {'name': 'Keep'})
+        put(self.a, 'parties', 'k2', {'name': 'Dup'})
+        self.c.converge()
+        put(self.a, 'parties', 'k2', {'name': 'Dup', 'kind': 'person', 'status': 'merged', 'merged_into': 'k1'}, row(self.a, 'parties', 'k2')['ver'])
+        put(self.b, 'parties', 'k2', {'name': 'Dup', 'kind': 'person', 'status': 'archived'}, row(self.b, 'parties', 'k2')['ver'])
+        self.meet()
+        r = row(self.d, 'parties', 'k2')
+        self.assertEqual((r['status'], r['merged_into']), ('merged', 'k1'))
+
+    def test_the_delete_of_an_undone_import_loses_against_a_real_edit_on_another_pc(self):
+        put(self.a, 'parties', 'imp-x-1', {'name': 'Imported', 'import_batch': 'bx'})
+        self.c.converge()
+        v = row(self.a, 'parties', 'imp-x-1')['ver']
+        self.a.commit('undo import', [{'e': 'parties', 'id': 'imp-x-1', 'op': 'del', 'ver': v}], kind='restore')
+        put(self.b, 'parties', 'imp-x-1', {'name': 'Imported', 'import_batch': 'bx', 'city': 'Cairo', 'kind': 'person', 'status': 'active'}, row(self.b, 'parties', 'imp-x-1')['ver'])
+        self.c.converge()
+        r = row(self.d, 'parties', 'imp-x-1')
+        self.assertIsNotNone(r, "somebody's real work is not deleted by an old undo")
+        self.assertEqual(r['city'], 'Cairo')
 
 
 if __name__ == '__main__':

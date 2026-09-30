@@ -7,6 +7,8 @@ from datetime import date, datetime, timedelta
 import query as query_mod
 from store import BadRequest
 
+from .util import rows, strip
+
 ENTITIES = ['party_roles', 'party_relations', 'notes', 'activities', 'tasks', 'appointments', 'inbox', 'opportunities', 'projects', 'services', 'parties']
 
 PEOPLE = {
@@ -123,21 +125,36 @@ def load(app, u, ip, lang='ar', kinds=()):
 
 
 def remove(app, u, ip):
-    """Deletes the untouched demo records; edited ones stay and lose the demo mark."""
+    """Removes the demo records nobody has touched. Edited ones stay and lose the demo mark; a demo person or company that has REAL records attached
+    (a task, a note, a project ...) stays too. Rows are read unmasked from the store (a user without money rights must not blank amounts)."""
     access = query_mod.access_for(u)
     guard = app.commit_guard(u)
+    sample = {e: rows(app, access, e, [('sample', 'eq', 1)]) for e in ENTITIES}
+    party_ids = [p['id'] for p in sample['parties']]
+    attached = set()
+    for i in range(0, len(party_ids), 150):
+        part = party_ids[i:i + 150]
+        for entity in ('opportunities', 'projects', 'tasks', 'appointments', 'activities', 'notes', 'attachments'):
+            attached |= {r['party_id'] for r in rows(app, access, entity, [('party_id', 'in', part)]) if not r.get('sample')}
+        for key in ('from_party', 'to_party'):
+            for r in rows(app, access, 'party_relations', [(key, 'in', part)]):
+                if not r.get('sample'):
+                    attached |= {r['from_party'], r['to_party']}
     removed = kept = 0
     for e in ENTITIES:
-        rows = query_mod.run(app.store, e, access, [('sample', 'eq', 1)], limit=500)['rows']
         ops = []
-        for r in rows:
-            if r['ver'] == 1:
-                ops.append({'e': e, 'id': r['id'], 'op': 'del', 'ver': r['ver']})
+        for r in sample[e]:
+            cur = app.store.get(e, r['id'])
+            if not cur:
+                continue
+            if cur['ver'] == 1 and not (e == 'parties' and r['id'] in attached):
+                ops.append({'e': e, 'id': r['id'], 'op': 'del', 'ver': cur['ver']})
                 removed += 1
             else:
-                row = {k: v for k, v in r.items() if not k.startswith('_') and k not in ('id', 'ver', 'sample')}
-                ops.append({'e': e, 'id': r['id'], 'op': 'put', 'ver': r['ver'], 'row': row})
+                row = strip(cur)
+                row.pop('sample', None)
+                ops.append({'e': e, 'id': r['id'], 'op': 'put', 'ver': cur['ver'], 'row': row})
                 kept += 1
-        for i in range(0, len(ops), 150):
-            app.store.commit(u['username'], ip, 'Remove demo data', ops[i:i + 150], guard=guard, user_id=u['id'])
+        for i in range(0, len(ops), 150):    # kind 'restore': never wins against a real change made at the same time on another PC
+            app.store.commit(u['username'], ip, 'Remove demo data', ops[i:i + 150], guard=guard, user_id=u['id'], kind='restore')
     return {'removed': removed, 'kept': kept}
