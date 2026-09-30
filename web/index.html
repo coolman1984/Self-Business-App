@@ -1,13 +1,20 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="morning">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <title>Self Business OS</title>
-<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="/lib/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/css/components.css">
+<link rel="stylesheet" href="/css/shell.css">
+<link rel="preload" href="/fonts/plex-arabic-400.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
-<main id="app"><p>Self Business OS — the core engine is running. The interface arrives in Phase 2.</p></main>
+<div id="app" aria-live="polite"></div>
+<noscript>This program needs JavaScript enabled in the browser.</noscript>
 <script type="module" src="/js/app.js"></script>
 </body>
 </html>

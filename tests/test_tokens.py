@@ -26,9 +26,9 @@ def parse_tokens():
     with open(CSS, encoding='utf-8') as f:
         text = f.read()
     themes = {}
-    for m in re.finditer(r"(:root(?:\[data-theme='(\w+)'\])?(?:,\s*:root\[data-theme='(\w+)'\])?)\s*\{(.*?)\n\}", text, re.S):
-        names = [n for n in (m.group(2), m.group(3)) if n]
-        body = dict(re.findall(r'--([\w-]+):\s*(#[0-9a-fA-F]{6})\b', m.group(4)))
+    for m in re.finditer(r"^((?::root,\s*)?(?:\[data-theme='(\w+)'\])?)\s*\{(.*?)\n\}", text, re.S | re.M):
+        names = [n for n in (m.group(2),) if n]
+        body = dict(re.findall(r'--([\w-]+):\s*(#[0-9a-fA-F]{6})\b', m.group(3)))
         for n in names:
             themes.setdefault(n, {}).update(body)
     return themes

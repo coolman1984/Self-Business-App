@@ -33,7 +33,7 @@
 }
 
 /* ---------- morning: warm paper, deep teal, copper (default) ---------- */
-:root, :root[data-theme='morning'] {
+:root, [data-theme='morning'] {
   --canvas: #f4f2ee; --surface: #ffffff; --surface-2: #faf8f5; --raised: #ffffff;
   --ink: #1c1b19; --ink-2: #5a5750; --ink-3: #6f6b63;
   --line: #e4e0d9; --line-strong: #cfc9bf;
@@ -52,7 +52,7 @@
 }
 
 /* ---------- evening: warm dark ---------- */
-:root[data-theme='evening'] {
+[data-theme='evening'] {
   --canvas: #101214; --surface: #171a1d; --surface-2: #1d2125; --raised: #22272b;
   --ink: #ecEAE6; --ink-2: #b1ada6; --ink-3: #9a968f;
   --line: #2c3136; --line-strong: #3c434a;
@@ -71,7 +71,7 @@
 }
 
 /* ---------- navy: light with a navy sidebar and amber accent (close to the reference screens) ---------- */
-:root[data-theme='navy'] {
+[data-theme='navy'] {
   --canvas: #eef1f6; --surface: #ffffff; --surface-2: #f7f9fc; --raised: #ffffff;
   --ink: #0f1b33; --ink-2: #4b5a75; --ink-3: #66748d;
   --line: #dce2ec; --line-strong: #c5cddb;
@@ -90,7 +90,7 @@
 }
 
 /* ---------- navy night: dark navy ---------- */
-:root[data-theme='navynight'] {
+[data-theme='navynight'] {
   --canvas: #0b1220; --surface: #121a2b; --surface-2: #172136; --raised: #1b2640;
   --ink: #e6ecf5; --ink-2: #aab7cd; --ink-3: #93a1b9;
   --line: #26324a; --line-strong: #364563;
@@ -109,7 +109,7 @@
 }
 
 /* ---------- high contrast ---------- */
-:root[data-theme='contrast'] {
+[data-theme='contrast'] {
   --canvas: #ffffff; --surface: #ffffff; --surface-2: #f2f2f2; --raised: #ffffff;
   --ink: #000000; --ink-2: #1a1a1a; --ink-3: #333333;
   --line: #000000; --line-strong: #000000;
