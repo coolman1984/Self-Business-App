@@ -21,6 +21,8 @@ after review. Order changed from the brief where research showed a better order 
 | 11 | **Multi-device & hardening** | devices screen, relay transport for remote teams, backup admin PC, conflict "To decide" UX, performance budgets, independent security + distributed review | multi-process suite green incl. relay; performance budgets met on the reference old laptop; all review findings fixed with regression tests |
 | 12 | **Installer & commercial release** | signed installer, auto-update channel, licence/activation (per owner decision), user guides ar/en, help centre, release notes | clean install/upgrade/uninstall on Windows 10 and 11 keeps data; SmartScreen-clean with code signing; pilot users sign off |
 
+**Status:** Phase 0, 1 done and merged; Phases 2 and 3 implemented on branch `ccr-b21effdb-07jb83` (see `TASKS.md`), waiting for review and merge.
+
 ## 2. Why the order differs from the brief
 
 1. **Import moved into Phase 3** (brief: implicit/late): customers arrive with Excel; without import the first pilot fails.

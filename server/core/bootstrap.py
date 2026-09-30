@@ -7,5 +7,10 @@ import os
 
 
 def register_domains():
-    for name in filter(None, os.environ.get('SBO_ENTITY_MODULES', '').split(',')):
-        importlib.import_module(name.strip()).register()
+    """SBO_ENTITY_MODULES replaces the product's own domain (used by the engine tests); without it the product is registered."""
+    names = [n.strip() for n in os.environ.get('SBO_ENTITY_MODULES', '').split(',') if n.strip()]
+    if not names:
+        import business  # server/business: the product's entities and permissions
+        business.register()
+    for name in names:
+        importlib.import_module(name).register()

@@ -83,8 +83,9 @@ class Client:
 
 
 class Server:
-    def __init__(self, name, root=None, data_dir=None, extra_cfg=None):
+    def __init__(self, name, root=None, data_dir=None, extra_cfg=None, domain='engine_domain'):
         self.name = name
+        self.domain = domain
         self.root = root or tempfile.mkdtemp(prefix=f'sbo-{name}-')
         self.port, self.sync_port = free_port(), free_port()
         self.data_dir = data_dir or os.path.join(self.root, 'data')
@@ -114,7 +115,7 @@ class Server:
             json.dump(cfg, f)
 
     def start(self, wait=True):
-        env = dict(os.environ, SBO_CONFIG=self.cfg_path, PYTHONUNBUFFERED='1', SBO_ENTITY_MODULES='engine_domain',
+        env = dict(os.environ, SBO_CONFIG=self.cfg_path, PYTHONUNBUFFERED='1', SBO_ENTITY_MODULES=self.domain,
                    PYTHONPATH=os.path.dirname(os.path.abspath(__file__)))
         self.proc = subprocess.Popen([sys.executable, APP], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         threading.Thread(target=self._drain, args=(self.proc,), daemon=True).start()

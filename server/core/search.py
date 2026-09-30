@@ -10,7 +10,13 @@ import threading
 from registry import ENTITIES, META
 from textnorm import norm_email, norm_text, phone_tokens
 
-SCHEMA = 3  # bump to force a rebuild when the index layout or the normalisation changes
+SCHEMA = 4  # bump to force a rebuild when the index layout or the normalisation changes
+
+
+def _with_bare_words(text):
+    """Arabic words carry the article 'al' (ال); people type both with and without it, so the bare word is indexed too."""
+    extra = [w[2:] for w in text.split() if w.startswith('ال') and len(w) > 4]
+    return text + (' ' + ' '.join(extra) if extra else '')
 
 
 class SearchIndex:
@@ -47,10 +53,10 @@ class SearchIndex:
     # ------------------------------------------------------------ building
     def _doc(self, store, entity, row):
         m = META.get(entity)
-        if m is None or not m.search:
+        if m is None or not m.search or (m.search_skip and m.search_skip(row)):
             return None
         hidden = set(m.money_fields) | set(m.sensitive_fields)
-        words = [norm_text(row.get(f)) for f in m.search if f not in hidden and row.get(f) not in (None, '')]
+        words = [_with_bare_words(norm_text(row.get(f))) for f in m.search if f not in hidden and row.get(f) not in (None, '')]
         for f in m.phone_fields:
             if f not in hidden:
                 words += phone_tokens(row.get(f), self.country)

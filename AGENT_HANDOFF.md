@@ -17,7 +17,8 @@ replies: answer him in short, simple Egyptian Arabic with fitting emojis, no Eng
 | `DEVELOPMENT_HISTORY.md`, `IDEAS.md` | memory and reusable ideas |
 
 ## 2. State right now
-Phase 0 finished (documents only). Phase 1 (core engine harvest) is next — see `TASKS.md`.
+Phases 0 and 1 are merged into `main`. Phases 2 (design system and shell) and 3 (people, work, timeline, Today v1, import) are implemented on the session
+branch `ccr-b21effdb-07jb83` and wait for review and merge — see `TASKS.md` (3.9). Phase 4 (money) is next.
 Open owner questions and their defaults: `docs/OWNER_BRIEF_AR.md` §ك. If unanswered, use the default and say so.
 
 ## 3. Reference repositories (read-only, never modify)

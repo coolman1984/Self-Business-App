@@ -15,6 +15,7 @@ import json
 from registry import ENTITIES, META, scope_of
 
 MAX_LIMIT = 500
+STAMP_COLS = {'_created': 'created_at', '_updated': 'updated_at'}   # when a record was added / last changed (filter and sort by them)
 OPERATORS = {'eq': '=', 'ne': '!=', 'lt': '<', 'lte': '<=', 'gt': '>', 'gte': '>='}
 
 
@@ -64,6 +65,8 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
     for field, op, value in filters or []:
         if field == 'id':
             col = 'id'
+        elif field in STAMP_COLS:
+            col = STAMP_COLS[field]
         elif field in cols:
             col = cols[field][0]
         else:
@@ -74,6 +77,8 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
         elif op == 'like':
             where.append(f"{col} LIKE ? ESCAPE '\\'")
             args.append('%' + str(value).replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%')
+        elif op in ('null', 'notnull'):   # empty / not empty (a missing value is NULL or '')
+            where.append(f"({col} IS NULL OR {col} = '')" if op == 'null' else f"({col} IS NOT NULL AND {col} != '')")
         elif op == 'in':
             vals = list(value or [])[:200]
             where.append(f'{col} IN ({",".join("?" * len(vals)) or "NULL"})')
@@ -98,6 +103,8 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
             else:
                 where.append(f'{cols[fk][0]} IN (SELECT id FROM {ptable} WHERE {pcol} IN ({",".join("?" * len(access["scopes"])) or "NULL"}))')
                 args += list(access['scopes'])
+        else:
+            where.append('0')   # a user limited to some areas sees nothing of a kind of record that has no areas (fail closed)
     elif mode == 'own':
         where.append('created_by_id=?')
         args.append(access['user_id'])
@@ -108,8 +115,8 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
             where.append('(' + ' OR '.join(f"{c} LIKE ? ESCAPE '\\'" for c in like_cols) + ')')
             q = '%' + str(search).replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
             args += [q] * len(like_cols)
-    order_col = cols[sort][0] if sort in cols else 'rowid'
-    if sort and sort not in cols and sort != 'rowid':
+    order_col = cols[sort][0] if sort in cols else STAMP_COLS.get(sort, 'rowid')
+    if sort and sort not in cols and sort != 'rowid' and sort not in STAMP_COLS:
         raise QueryError(f'Cannot sort by {sort}')
     direction = 'DESC' if desc else 'ASC'
     op = '<' if desc else '>'
@@ -135,12 +142,17 @@ def run(store, entity, access, filters=None, search=None, sort=None, desc=False,
             total = store.conn.execute(f'SELECT COUNT(*) FROM {table}' + (' WHERE ' + ' AND '.join(where) if where else ''), args).fetchone()[0]
     more = len(rows) > limit
     rows = rows[:limit]
-    out = [mask(entity, store._row_js(entity, r), access['perms']) for r in rows]
+    out = [mask(entity, {**store._row_js(entity, r), **stamps(r)}, access['perms']) for r in rows]
     nxt = None
     if more and rows:
         last = rows[-1]
         nxt = _encode([last[order_col] if order_col != 'rowid' else None, last['_rowid']])
     return {'rows': out, 'next': nxt, 'total': total}
+
+
+def stamps(r):
+    """When and by whom a record was created / last changed (read-only extras next to the fields; the page never sends them back)."""
+    return {'_created': r['created_at'], '_created_by': r['created_by'], '_updated': r['updated_at'], '_updated_by': r['updated_by']}
 
 
 def hidden_fields(entity, perms):

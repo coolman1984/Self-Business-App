@@ -20,9 +20,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Browser test tools (Playwright drives the Chrome that is already on the runner)
+        run: python -m pip install playwright
       - name: Tests (engine, security, search, several PCs)
         working-directory: tests
-        run: python -m unittest test_unit test_convergence test_erase test_resolvers test_auth test_query test_search test_layers test_secrets_in_logs test_multinode
+        run: python -m unittest test_unit test_convergence test_erase test_resolvers test_auth test_query test_search test_layers test_secrets_in_logs test_multinode test_tokens test_i18n test_launcher test_business test_business_sync test_business_review
+      - name: Tests (interface in a real browser; a missing browser fails the build)
+        working-directory: tests
+        env:
+          SBO_REQUIRE_UI: '1'
+        run: python -m unittest test_js_units test_ui test_ui_business test_ui_review
+      - name: Visual matrix (screenshots for review)
+        working-directory: tests
+        run: python visual/matrix.py --quick
+      - uses: actions/upload-artifact@v4
+        with:
+          name: visual-matrix
+          path: tests/visual/out
+          retention-days: 7
 
   windows-installer:
     needs: test

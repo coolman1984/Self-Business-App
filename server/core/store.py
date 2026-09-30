@@ -167,6 +167,11 @@ class Store:
                 self.folder = replica.BusinessFolder(self.conn, SPECS, self.journal.deps_of, _coerce)
 
     # ------------------------------------------------------------ helpers
+    def stamps(self, entity, rid):
+        with self.lock:
+            r = self.conn.execute(f'SELECT created_at, created_by, updated_at, updated_by FROM {ENTITIES[entity][0]} WHERE id=?', (rid,)).fetchone()
+        return {'_created': r['created_at'], '_created_by': r['created_by'], '_updated': r['updated_at'], '_updated_by': r['updated_by']} if r else {}
+
     def version(self):
         with self.lock:
             return int(self.conn.execute("SELECT value FROM meta WHERE key='data_version'").fetchone()[0])
@@ -326,6 +331,8 @@ class Store:
                 raise BadRequest('Invalid file reference')
         if entity in META and META[entity].validate:
             META[entity].validate(row)  # raises BadRequest with a plain-words message
+        if entity in META and META[entity].check:
+            META[entity].check(row, rid, c)
         for js, col, kind_, label in fields:
             v = row.get(js)
             if v not in (None, '') and kind_ in (I, R) and _coerce(kind_, v) is None:
@@ -364,7 +371,8 @@ class Store:
                     'before': b, 'after': after}, rop
         if cur:  # previously deleted row that is being re-created
             old = self._row_js(entity, cur)
-            s = {js: after.get(js) for js in names if js not in counters}
+            # only the fields that differ from the deleted record travel: an "Undo" must not overwrite what another PC changed meanwhile
+            s = {js: after.get(js) for js in names if js not in counters and after.get(js) != old.get(js)}
             n = {k: (after.get(k) or 0) - (old.get(k) or 0) for k in counters}
         else:
             s = {js: v for js, v in after.items() if js != 'id' and js not in counters}
@@ -542,6 +550,30 @@ class Store:
     # ------------------------------------------------------------ logs (kept in the journal: never restored, all PCs)
     def log_activity(self, user, ip, events):
         self.journal.log_activity(user, ip, events[:500])
+
+    def history(self, pairs, limit=200, before=None):
+        """What happened to some records, newest first: [{ts, user, op, entity, id, label, changes, after}].
+        pairs = [(entity, id)]. The caller checks that the user may see these records and masks hidden fields."""
+        pairs = list(dict.fromkeys(pairs))[:1000]
+        if not pairs or self.journal is None:
+            return []
+        out = []
+        with self.journal.lock:
+            for i in range(0, len(pairs), 300):
+                chunk = pairs[i:i + 300]
+                sql = ('SELECT ts, user, op, entity, entity_id, label, changes, after FROM audit WHERE (entity, entity_id) IN (VALUES '
+                       + ','.join(['(?,?)'] * len(chunk)) + ')' + (' AND ts < ?' if before else '') + ' ORDER BY ts DESC, id DESC LIMIT ?')
+                args = [x for p in chunk for x in p] + ([before] if before else []) + [int(limit)]
+                for r in self.journal.conn.execute(sql, args):
+                    try:
+                        changes = json.loads(r['changes'] or '{}')
+                        after = json.loads(r['after']) if r['after'] and r['op'] == 'insert' else None
+                    except ValueError:
+                        changes, after = {}, None
+                    out.append({'ts': r['ts'], 'user': r['user'], 'op': r['op'], 'entity': r['entity'], 'id': r['entity_id'], 'label': r['label'],
+                                'changes': changes, 'after': after})
+        out.sort(key=lambda x: x['ts'], reverse=True)
+        return out[:int(limit)]
 
     def query_log(self, kind, q='', user='', typ='', scope='', frm='', to='', limit=200, offset=0, scopes=None, node='', admin=True, search_values=True):
         if kind == 'activity':

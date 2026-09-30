@@ -154,3 +154,21 @@ Money: student payments are normal `payments` with allocations to enrolment invo
    roles are copied to A as *new rows* (so offline PCs that edit B still converge); unmerge clears the redirect.
 4. Concurrent creation of the same person on two PCs offline → two rows + a "possible duplicate" flag (same rule as
    BAMS survey duplicates), shown in "To decide".
+
+## 8. As built in Phase 3 (differences from the proposal above)
+
+Implemented in `server/business/entities.py`. Tables: `parties`, `party_roles`, `party_relations`, `opportunities`, `projects`, `tasks`, `appointments`, `notes`,
+`activities`, `inbox_items`, `attachments`, `services`, `custom_field_defs`, `custom_values`, `import_batches` (+ the core `settings`).
+
+| Proposal | Built | Why |
+|---|---|---|
+| `contact_points` table | `phone`, `phone2`, `email`, `address`, `city`, `website` on `parties` | ADR-025; search/dedupe/import stay simple; the table comes with the first module that needs many |
+| `subject_ref` on tasks / time entries | explicit `party_id`, `project_id`, `opportunity_id` on tasks and appointments; `party_id` **plus** `subject_ref` on notes, activities and files | real foreign keys where the relation is known (principle 5); the timeline of a client is one query on `party_id` |
+| `packages`, `price_lists`, `links`, `consents`, `addresses`, `tags/taggings` | not built | not needed before money/portal phases; tags are a text field (`tags`, comma separated) so they are searchable |
+| `custom_values` typed columns | `text_v`, `num_v`, `date_v`; id `<entity>:<record>:<key>` | ADR-026 |
+| milestones, deliverables, time entries | Phase 4/5 | with money and the freelancer module |
+| demo flag `sample` | on every business entity | "Remove sample data" deletes records with `sample = 1` that still have `ver = 1`; edited ones stay and lose the mark |
+| `merged_into` | on `parties` (`status = merged`) | lists hide merged records; the client file and the timeline of the survivor include the records of the merged duplicates; un-merge = clear both fields |
+
+Stage / status ranks (concurrent edits on two PCs): opportunity `new < contacted < meeting < offer < lost < won` (a signed deal is not undone by a give-up), task
+`todo < doing < waiting < done < cancelled`, project `planned < active < paused < done < cancelled`, task priority `low < normal < high < urgent`.

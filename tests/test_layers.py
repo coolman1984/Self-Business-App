@@ -42,7 +42,7 @@ class LayerTest(unittest.TestCase):
     def test_every_core_module_is_listed_in_the_provenance_file(self):
         with open(os.path.join(CORE, 'PROVENANCE.md'), encoding='utf-8') as f:
             text = f.read()
-        own = {'registry.py', 'permissions.py', 'query.py', 'search.py', 'textnorm.py', 'httpd.py', 'bootstrap.py'}  # written here, not harvested
+        own = {'registry.py', 'permissions.py', 'query.py', 'search.py', 'textnorm.py', 'httpd.py', 'bootstrap.py', 'tablefile.py', 'launcher.py'}  # written here, not harvested
         for path in core_files():
             name = os.path.basename(path)
             if name not in own:

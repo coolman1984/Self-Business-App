@@ -1,0 +1,138 @@
+/* Design tokens. Every colour, size and shadow of the interface comes from here; components never use raw values.
+   Themes are chosen with <html data-theme="...">: morning (default light), evening (dark), navy (light, navy sidebar),
+   navynight (dark navy), contrast (high contrast). "auto" is resolved by main.js to morning or evening.
+   Contrast of the important pairs is checked by tests/test_tokens.py (WCAG AA). */
+
+@font-face { font-family: 'IBM Plex Sans Arabic'; font-weight: 400; font-display: swap; src: url('/fonts/plex-arabic-400.woff2') format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+0660-0669; }
+@font-face { font-family: 'IBM Plex Sans Arabic'; font-weight: 500; font-display: swap; src: url('/fonts/plex-arabic-500.woff2') format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+0660-0669; }
+@font-face { font-family: 'IBM Plex Sans Arabic'; font-weight: 600; font-display: swap; src: url('/fonts/plex-arabic-600.woff2') format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+0660-0669; }
+@font-face { font-family: 'IBM Plex Sans Arabic'; font-weight: 700; font-display: swap; src: url('/fonts/plex-arabic-700.woff2') format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+0660-0669; }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 400; font-display: swap; src: url('/fonts/plex-latin-400.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 500; font-display: swap; src: url('/fonts/plex-latin-500.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 600; font-display: swap; src: url('/fonts/plex-latin-600.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 700; font-display: swap; src: url('/fonts/plex-latin-700.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+:root {
+  --font-plex: 'IBM Plex Sans Arabic', 'IBM Plex Sans', 'Segoe UI', Tahoma, sans-serif;
+  --font-system: 'Segoe UI', Tahoma, 'Noto Sans Arabic', system-ui, sans-serif;
+  --font-ui: var(--font-plex);
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --fs: 14px;                       /* user setting: small 13 / medium 14 / large 15 / x-large 17 */
+  --pad: 1;                         /* density: comfortable 1 / compact .8 */
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --radius-l: 18px;
+  --sidebar-w: 264px;
+  --sidebar-w-collapsed: 72px;
+  --topbar-h: 60px;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --t-fast: 120ms;
+  --t-base: 180ms;
+  --t-panel: 240ms;
+  color-scheme: light;
+}
+
+/* ---------- morning: warm paper, deep teal, copper (default) ---------- */
+:root, [data-theme='morning'] {
+  --canvas: #f4f2ee; --surface: #ffffff; --surface-2: #faf8f5; --raised: #ffffff;
+  --ink: #1c1b19; --ink-2: #5a5750; --ink-3: #6f6b63;
+  --line: #e4e0d9; --line-strong: #cfc9bf;
+  --brand: #1f4e47; --brand-ink: #ffffff; --brand-soft: #e3efec; --brand-soft-ink: #17403a;
+  --accent: #e07a3f; --accent-ink: #1c1b19; --accent-hover: #c8672f; --accent-soft: #fbe9dc; --accent-soft-ink: #7a3812;
+  --ok: #2e8b57; --ok-soft: #e0f2e8; --ok-ink: #17593a;
+  --warn: #b8790a; --warn-soft: #fbefd2; --warn-ink: #7a5205;
+  --bad: #c8453b; --bad-soft: #fbe3e0; --bad-ink: #8f2a22;
+  --info: #2f6fb3; --info-soft: #e0ecf8; --info-ink: #1d4a7a;
+  --sidebar-bg: #16332f; --sidebar-ink: #e9f1ef; --sidebar-ink-2: #9fb8b3; --sidebar-hover: #1e433e; --sidebar-active-bg: #24524b; --sidebar-active-ink: #ffffff; --sidebar-line: #2a4a45;
+  --focus: #d0642a;
+  --shadow-1: 0 1px 2px rgb(28 27 25 / .06), 0 2px 8px rgb(28 27 25 / .05);
+  --shadow-2: 0 10px 30px rgb(28 27 25 / .14);
+  --overlay: rgb(20 20 18 / .45);
+  color-scheme: light;
+}
+
+/* ---------- evening: warm dark ---------- */
+[data-theme='evening'] {
+  --canvas: #101214; --surface: #171a1d; --surface-2: #1d2125; --raised: #22272b;
+  --ink: #ecEAE6; --ink-2: #b1ada6; --ink-3: #9a968f;
+  --line: #2c3136; --line-strong: #3c434a;
+  --brand: #7cc2b6; --brand-ink: #0d2622; --brand-soft: #1c332f; --brand-soft-ink: #a9dcd2;
+  --accent: #f29a61; --accent-ink: #1c1b19; --accent-hover: #f6ae80; --accent-soft: #3a281b; --accent-soft-ink: #f6bf9c;
+  --ok: #5bd18f; --ok-soft: #173325; --ok-ink: #8fe4b3;
+  --warn: #f2b84b; --warn-soft: #382b10; --warn-ink: #f6cf7e;
+  --bad: #ff7a6e; --bad-soft: #3a1c19; --bad-ink: #ffaaa1;
+  --info: #6fa8e8; --info-soft: #172a40; --info-ink: #a4c9f2;
+  --sidebar-bg: #0b0d0f; --sidebar-ink: #ecEAE6; --sidebar-ink-2: #9a968f; --sidebar-hover: #15181b; --sidebar-active-bg: #23282d; --sidebar-active-ink: #ffffff; --sidebar-line: #23282d;
+  --focus: #f29a61;
+  --shadow-1: 0 0 0 1px rgb(255 255 255 / .03) inset;
+  --shadow-2: 0 10px 30px rgb(0 0 0 / .5);
+  --overlay: rgb(0 0 0 / .6);
+  color-scheme: dark;
+}
+
+/* ---------- navy: light with a navy sidebar and amber accent (close to the reference screens) ---------- */
+[data-theme='navy'] {
+  --canvas: #eef1f6; --surface: #ffffff; --surface-2: #f7f9fc; --raised: #ffffff;
+  --ink: #0f1b33; --ink-2: #4b5a75; --ink-3: #66748d;
+  --line: #dce2ec; --line-strong: #c5cddb;
+  --brand: #13294b; --brand-ink: #ffffff; --brand-soft: #e2e9f5; --brand-soft-ink: #13294b;
+  --accent: #f2a900; --accent-ink: #1a1400; --accent-hover: #d99700; --accent-soft: #fdf0cc; --accent-soft-ink: #6b4a00;
+  --ok: #1f9d55; --ok-soft: #dcf3e5; --ok-ink: #14663a;
+  --warn: #b57200; --warn-soft: #fcefd0; --warn-ink: #75500a;
+  --bad: #d64545; --bad-soft: #fbe2e2; --bad-ink: #912323;
+  --info: #2f6fde; --info-soft: #e0eafc; --info-ink: #1c4796;
+  --sidebar-bg: #13294b; --sidebar-ink: #e8eef8; --sidebar-ink-2: #9db0cf; --sidebar-hover: #1b3762; --sidebar-active-bg: #274777; --sidebar-active-ink: #ffffff; --sidebar-line: #26406b;
+  --focus: #2f6fde;
+  --shadow-1: 0 1px 2px rgb(15 27 51 / .06), 0 2px 6px rgb(15 27 51 / .06);
+  --shadow-2: 0 8px 24px rgb(15 27 51 / .14);
+  --overlay: rgb(11 18 32 / .5);
+  color-scheme: light;
+}
+
+/* ---------- navy night: dark navy ---------- */
+[data-theme='navynight'] {
+  --canvas: #0b1220; --surface: #121a2b; --surface-2: #172136; --raised: #1b2640;
+  --ink: #e6ecf5; --ink-2: #aab7cd; --ink-3: #93a1b9;
+  --line: #26324a; --line-strong: #364563;
+  --brand: #8fb2ff; --brand-ink: #0b1220; --brand-soft: #1a2946; --brand-soft-ink: #b9cfff;
+  --accent: #ffc23d; --accent-ink: #1a1400; --accent-hover: #ffd36d; --accent-soft: #3a2f10; --accent-soft-ink: #ffdf95;
+  --ok: #3dd68c; --ok-soft: #12332a; --ok-ink: #86e8b8;
+  --warn: #ffb547; --warn-soft: #3a2b10; --warn-ink: #ffd08a;
+  --bad: #ff6b6b; --bad-soft: #3b1a1d; --bad-ink: #ffa5a5;
+  --info: #6ea8ff; --info-soft: #172c4b; --info-ink: #a9caff;
+  --sidebar-bg: #080d18; --sidebar-ink: #e6ecf5; --sidebar-ink-2: #93a1b9; --sidebar-hover: #111a2d; --sidebar-active-bg: #1d2a47; --sidebar-active-ink: #ffffff; --sidebar-line: #1a2540;
+  --focus: #ffc23d;
+  --shadow-1: 0 0 0 1px rgb(255 255 255 / .04) inset;
+  --shadow-2: 0 8px 24px rgb(0 0 0 / .55);
+  --overlay: rgb(0 0 0 / .6);
+  color-scheme: dark;
+}
+
+/* ---------- high contrast ---------- */
+[data-theme='contrast'] {
+  --canvas: #ffffff; --surface: #ffffff; --surface-2: #f2f2f2; --raised: #ffffff;
+  --ink: #000000; --ink-2: #1a1a1a; --ink-3: #333333;
+  --line: #000000; --line-strong: #000000;
+  --brand: #000000; --brand-ink: #ffffff; --brand-soft: #e6e6e6; --brand-soft-ink: #000000;
+  --accent: #ffd400; --accent-ink: #000000; --accent-hover: #ffe24d; --accent-soft: #fff3b0; --accent-soft-ink: #000000;
+  --ok: #006b2d; --ok-soft: #d6f5e0; --ok-ink: #003d19;
+  --warn: #8a5a00; --warn-soft: #ffe9b0; --warn-ink: #3d2800;
+  --bad: #b00020; --bad-soft: #ffd9de; --bad-ink: #5c0011;
+  --info: #0040b0; --info-soft: #d9e6ff; --info-ink: #002466;
+  --sidebar-bg: #000000; --sidebar-ink: #ffffff; --sidebar-ink-2: #e0e0e0; --sidebar-hover: #262626; --sidebar-active-bg: #ffd400; --sidebar-active-ink: #000000; --sidebar-line: #ffffff;
+  --focus: #0040b0;
+  --shadow-1: 0 0 0 1px #000;
+  --shadow-2: 0 0 0 2px #000, 0 10px 30px rgb(0 0 0 / .4);
+  --overlay: rgb(0 0 0 / .65);
+  color-scheme: light;
+}
+
+/* ---------- user settings ---------- */
+:root[data-font='system'] { --font-ui: var(--font-system); }
+:root[data-size='s'] { --fs: 13px; }
+:root[data-size='m'] { --fs: 14px; }
+:root[data-size='l'] { --fs: 15px; }
+:root[data-size='xl'] { --fs: 17px; }
+:root[data-density='compact'] { --pad: .78; }
+:root[data-motion='off'] { --t-fast: 0ms; --t-base: 0ms; --t-panel: 0ms; }
+@media (prefers-reduced-motion: reduce) { :root { --t-fast: 0ms; --t-base: 0ms; --t-panel: 0ms; } }

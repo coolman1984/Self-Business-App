@@ -46,6 +46,7 @@ DEFAULT_CONFIG = {
     'keep_auto_backups': 200,
     'max_upload_mb': 50,
     'open_browser': True,
+    'app_mode': True,
     'session_idle_minutes': 30,
     'session_max_hours': 12,
     'max_failed_logins': 5,
@@ -247,6 +248,8 @@ class App:
                         raise Forbidden('You can only work inside the areas assigned to you.')
                     if not {c.get('scope'), c.get('scope_before', c.get('scope'))} <= scopes:
                         raise Forbidden('You can only change the records assigned to you.')
+                elif mode == 'scopes':
+                    raise Forbidden('You can only work inside the areas assigned to you.')   # this kind of record has no areas: closed for limited users
                 elif mode == 'own' and op != 'insert':
                     r = self.store.conn.execute(f'SELECT created_by_id FROM {ENTITIES[e][0]} WHERE id=?', (c['id'],)).fetchone()
                     if not r or not r[0] or r[0] != u['id']:
@@ -270,7 +273,7 @@ class App:
                 continue
             for f in hidden:
                 op['row'].pop(f, None)
-            cur = self.store.get(op['e'], op.get('id'))
+            cur = self.store.get(op['e'], op.get('id'), include_deleted=True)   # also a deleted record: "Undo" must not blank hidden values
             if cur:
                 for f in hidden:
                     if cur.get(f) is not None:
@@ -521,9 +524,11 @@ def make_handler(app):
                 row = app.store.get(entity, unquote(rid))
                 if not row or not query_mod.can_see(entity, row, self.access(), app.store):
                     return self.send(404, {'error': 'Not found'})
-                return self.send(200, query_mod.mask(entity, row, set(self.u['perms'])))
+                return self.send(200, query_mod.mask(entity, {**row, **app.store.stamps(entity, row['id'])}, set(self.u['perms'])))
             if p == '/api/search':
                 allowed = [e for e, m in META.items() if m.search and set(m.perms_for('view')) & set(self.u['perms'])]
+                if qs.get('e'):
+                    allowed = [e for e in allowed if e in qs['e'].split(',')]
                 hits = app.index.search(qs.get('q', ''), self.access(), int(qs.get('limit', 20)), allowed) if allowed else []
                 return self.send(200, hits)
             if p == '/api/info':
@@ -1073,19 +1078,19 @@ def make_handler(app):
 
 def run(app, background=False, open_browser=None):
     """Starts the servers and blocks until stopped. Returns immediately when another copy already runs on this data folder."""
-    import webbrowser
+    from launcher import open_app
     port = int(app.cfg['port'])
     if not app.instance:
         print('The program is already running on this PC. Opening it in the browser.')
         if not background:
-            webbrowser.open(f'http://localhost:{port}/')
+            open_app(f'http://localhost:{port}/', app.cfg.get('app_mode', True))
         return
     try:
         httpd = Server((app.cfg['host'], port), make_handler(app))
     except OSError:
         print(f'Port {port} is already in use - the program is probably already running. Opening it in the browser.')
         if not background:
-            webbrowser.open(f'http://localhost:{port}/')
+            open_app(f'http://localhost:{port}/', app.cfg.get('app_mode', True))
         return
     try:
         if app.auth.has_users():
@@ -1108,7 +1113,7 @@ def run(app, background=False, open_browser=None):
     print('=' * 64, flush=True)
     app.say('Server started')
     if (app.cfg.get('open_browser', True) if open_browser is None else open_browser) and not background:
-        threading.Timer(0.8, lambda: webbrowser.open(f'http://localhost:{port}/')).start()
+        threading.Timer(0.8, lambda: open_app(f'http://localhost:{port}/', app.cfg.get('app_mode', True))).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
