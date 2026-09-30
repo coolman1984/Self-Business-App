@@ -5,7 +5,7 @@ import { t } from '../i18n/index.js';
 import { session } from '../core/session.js';
 import { get } from '../core/api.js';
 import { date, weekday, greeting } from '../core/format.js';
-import { card, emptyState, button, pageHeader, errorBox } from '../ui/kit.js';
+import { card, emptyState, button, errorBox } from '../ui/kit.js';
 import { friendly, post as apiPost, get as apiGet } from '../core/api.js';
 import { can } from '../core/session.js';
 import { confirmBox, toast } from '../ui/overlay.js';
@@ -32,8 +32,42 @@ export async function todayView() {
   }));
   const content = parts.filter(Boolean);
   return h('div', { class: 'stack-lg' },
-    pageHeader(name ? t('greet.named', { greet: t(greeting()), name }) : t(greeting()), { sub: `${weekday(now)} · ${date(now)}` }),
+    hero(name ? t('greet.named', { greet: t(greeting()), name }) : t(greeting()), `${weekday(now)} · ${date(now)}`, fresh ? null : d),
     fresh || !content.length ? startCard() : h('div', { class: 'today-grid' }, ...content));
+}
+
+// the top of Today: greeting, one sentence about the day, the next actions, and how much of the day is behind you
+function hero(title, when, d) {
+  let line = null, ring = null;
+  if (d) {
+    const late = d.overdue.length + d.followUps.length;
+    const items = [...d.appointmentsToday.map((a) => a.starts_at), ...d.dueToday.map((x) => x.due)];
+    line = late || items.length
+      ? h('div', { class: 'hero-pills' },
+          late ? h('span', { class: 'hero-pill late' }, icon('triangle-alert'), h('b', { class: 'num' }, String(late)), t('today.pill.late')) : null,
+          h('span', { class: 'hero-pill' }, icon('calendar-days'), h('b', { class: 'num' }, String(items.length)), t('today.pill.today')))
+      : h('p', { class: 'hero-line' }, t('today.summary.free'));
+    if (items.length) {
+      const nowIso = d.now || new Date().toISOString().slice(0, 16);
+      const done = items.filter((x) => x && x.length > 10 && x.slice(0, 16) <= nowIso).length;
+      const r = 52, c = 2 * Math.PI * r, part = done / items.length;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 120 120');
+      svg.setAttribute('aria-hidden', 'true');
+      for (const [cls, off] of [['track', 0], ['bar', c * (1 - part)]]) {
+        const el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        Object.entries({ cx: 60, cy: 60, r, fill: 'none', 'stroke-width': 10, 'stroke-linecap': 'round', class: cls, 'stroke-dasharray': c, 'stroke-dashoffset': off }).forEach(([k, v]) => el.setAttribute(k, v));
+        svg.append(el);
+      }
+      ring = h('div', { class: 'hero-ring', role: 'img', 'aria-label': t('today.ring', { done, total: items.length }) }, svg,
+        h('div', { class: 'in' }, h('div', h('b', { class: 'num' }, `${done}/${items.length}`), h('span', t('today.ring.label')))));
+    }
+  }
+  const actions = h('div', { class: 'hero-actions' },
+    quickAddItems().length ? button(t('today.quick'), { kind: 'primary', ico: 'plus', onClick: (e) => openQuickAdd(e.currentTarget) }) : null,
+    can('calendar.view') ? button(t('nav.calendar'), { ico: 'calendar-days', href: href('/calendar') }) : null,
+    can('tasks.view') ? button(t('nav.tasks'), { ico: 'square-check-big', href: href('/tasks') }) : null);
+  return h('section', { class: 'hero', 'aria-label': title }, h('div', h('h1', title), h('div', { class: 'hero-date' }, when), line, actions), ring);
 }
 
 function startCard() {

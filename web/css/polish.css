@@ -249,3 +249,23 @@ a.list-item:hover { background: var(--surface-2); text-decoration: none; }
 
 @media (prefers-reduced-motion: reduce) { .stat:hover, .kcard:hover, .kind-card:hover, .opt:hover, .btn.primary:hover { transform: none; } }
 [data-motion='off'] .stat:hover, [data-motion='off'] .kcard:hover, [data-motion='off'] .btn.primary:hover { transform: none; }
+
+/* ---------- second pass after looking at the screenshots ---------- */
+.list-item a.grow, a.list-item .grow { color: var(--ink); text-decoration: none; }
+.list-item a.grow:hover { color: var(--brand); text-decoration: none; }
+.hero-pills { display: flex; flex-wrap: wrap; gap: .5rem; margin-block-start: .9rem; }
+.hero-pill { display: inline-flex; align-items: center; gap: .45rem; padding: .35rem .8rem; border-radius: 999px; background: rgb(255 255 255 / .10); border: 1px solid rgb(255 255 255 / .14); color: var(--sidebar-active-ink); font-weight: 600; font-size: .9rem; }
+.hero-pill b { font-size: 1.05rem; }
+.hero-pill.late b { color: var(--accent); }
+@media (max-width: 640px) {
+  .tb-search button .icon { inline-size: 1.2rem; block-size: 1.2rem; }
+  #tb-add span { display: none; }
+  #tb-add { inline-size: 2.6rem; padding: 0; }
+  .hero h1 { font-size: 1.5rem; }
+}
+@media (max-width: 640px) {
+  .tb-search button { padding-inline: 0; justify-content: center; }
+  .pill-tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; max-inline-size: 100%; scrollbar-width: none; }
+  .pill-tabs button { flex: none; }
+  .record-head { padding: 1rem; }
+}

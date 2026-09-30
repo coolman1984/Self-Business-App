@@ -8,14 +8,14 @@ import { here, go, href, refresh, setQuery } from '../core/router.js';
 import { card, chip, button, emptyState, errorBox, pageHeader, skeleton, table, tabs, avatar, segmented } from '../ui/kit.js';
 import { menu, toast, confirmBox, modal } from '../ui/overlay.js';
 import { timelineView } from '../ui/timeline.js';
-import { date, dateTime, ago, money, initials, listSep } from '../core/format.js';
+import { date, dateTime, ago, money, initials, listSep, hueOf } from '../core/format.js';
 import { matches, norm } from '../core/textnorm.js';
 import { META, queryAll, getRecord, updateRecord, createRecord, phoneShow, telHref, waHref, mailHref, enumText, opPut, opDel, dueState, isoDate, stripped } from '../core/domain.js';
 import { partyDialog, opportunityDialog, projectDialog, taskDialog, appointmentDialog, activityDialog, relationDialog, removeRecord } from './dialogs.js';
 import { formDialog } from '../ui/form.js';
 
 const listState = { q: '', role: 'all', kind: 'all', status: 'active' };
-const partyAvatar = (p, big) => h('span', { class: 'avatar' + (p.kind === 'org' ? ' org' : '') + (big ? ' lg' : ''), 'aria-hidden': 'true' }, p.kind === 'org' ? icon('building-2') : initials(p.name));
+const partyAvatar = (p, big) => h('span', { class: 'avatar' + (p.kind === 'org' ? ' org' : '') + (big ? ' lg' : ''), 'aria-hidden': 'true', dataset: p.kind === 'org' ? {} : { hue: hueOf(p.name) } }, p.kind === 'org' ? icon('building-2') : initials(p.name));
 
 // ---------------------------------------------------------------------------------------------- list
 export async function clientsView() {

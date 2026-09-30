@@ -31,7 +31,8 @@ registerTodayBlock({ id: 'numbers', order: 1, async render() {
   const d = await todayData();
   const tiles = [['users', t('nav.clients'), d.counts.clients, '/clients'], ['briefcase', t('today.projects.active'), d.counts.projects, '/projects'], ['square-check-big', t('today.tasks.open'), d.counts.tasks, '/tasks'], ['user-plus', t('today.new.week'), d.newClients, '/clients']].filter(([, , n]) => n !== null && n !== undefined);
   if (!tiles.length || (d.counts.clients === 0 && !d.counts.tasks)) return null;
-  return h('div', { class: 'stats' }, ...tiles.map(([ico, label, n, path]) => card({ class: 'stat' }, h('div', { class: 'top' }, h('div', h('div', { class: 'label' }, label), h('div', { class: 'value num' }, num(n))), h('span', { class: 'ico' }, icon(ico))), h('a', { class: 'small', href: href(path) }, t('action.open')))));
+  const tones = ['', 'info', 'accent', 'ok'];
+  return h('div', { class: 'stats' }, ...tiles.map(([ico, label, n, path], i) => card({ class: 'stat', dataset: { tone: tones[i] } }, h('div', { class: 'top' }, h('div', h('div', { class: 'label' }, label), h('div', { class: 'value num' }, num(n))), h('span', { class: 'ico' }, icon(ico))), h('a', { class: 'small', href: href(path) }, t('action.open'), icon('arrow-right')))));
 } });
 
 // needs you now: late tasks, follow-ups due, the inbox

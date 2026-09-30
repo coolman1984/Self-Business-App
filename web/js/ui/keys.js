@@ -16,7 +16,7 @@ function typing(e) {
 
 export function initKeys() {
   addEventListener('keydown', (e) => {
-    const physical = e.code && e.code.startsWith('Key') ? e.code.slice(3).toLowerCase() : (e.code === 'Slash' ? (e.shiftKey ? '?' : '/') : e.key);   // the key, not the letter: works with the Arabic layout too
+    const physical = e.code && e.code.startsWith('Key') ? e.code.slice(3).toLowerCase() : ('؟/'.includes(e.key) && e.code === 'Slash' ? (e.key === '؟' ? '?' : '/') : e.key);   // letters by their physical key: works with the Arabic layout too
     if (e.ctrlKey || e.metaKey || e.altKey) {
       if ((e.ctrlKey || e.metaKey) && physical === 'k') { e.preventDefault(); const d = defs.find((x) => x.keys === 'mod+k'); d && d.run(); }
       return;

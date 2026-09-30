@@ -672,4 +672,9 @@ export const EN = {
   'list.truncated': 'The first {n} clients are shown. Type in the search to find the rest.',
   'import.more': 'Show {n} more rows',
   'import.undo.text': 'The people added by this import and untouched are removed, except those somebody attached work to (tasks, opportunities, notes ...). Details filled into existing clients stay.',
+  'today.summary.free': 'Your day is free and nothing is late. A good time to follow up with clients.',
+  'today.ring': '{done} of {total} of today\'s items are behind you',
+  'today.ring.label': 'of your day',
+  'today.pill.late': 'late',
+  'today.pill.today': 'on today\'s schedule',
 };

@@ -5,6 +5,36 @@ change (rule in `CLAUDE.md`).
 
 ---
 
+## Review fixes and design pass for Phases 2-3 (2026-09-30)
+
+**What:** three independent reviews (security, correctness, several PCs) found ~45 real problems; every one reproduced by the reviewer is fixed with a
+regression test (`tests/test_business_review.py`, `test_ui_review.py`, new cases in `test_business_sync.py`). Then a design pass on the owner's request
+("improve the look and feeling drastically"): `web/css/polish.css` (depth, colour per stat and per sales stage, glowing sidebar, floating search, Today hero
+with a day ring, cover band on the client file, calmer empty states, softer inputs and dialogs), checked in Arabic/English, light/dark/navy and on a phone.
+
+**Most important fixes**
+- A spreadsheet could freeze the program (`1E999999`), pad millions of empty rows or smuggle entity declarations past a prefix check → size, row, cell and
+  number limits; declarations refused anywhere in the file.
+- "Undo" after a delete blanked amounts and national IDs for people who cannot see them; "remove sample data" did the same → hidden fields are taken from
+  the stored record even when it is deleted; demo removal reads unmasked rows.
+- A user limited to areas saw and changed every business record (entities without areas were open) → fail closed in queries and in the save guard.
+- Import: a second import of the same file failed and left a half import without a batch; a double click imported twice; notes and company links doubled;
+  undo deleted clients others had attached work to and shared companies → batch record first, row-by-row retry, one-time token, idempotent links and notes,
+  undo keeps anything with attached work; undo and demo removal save as `restore` so they never beat a real edit made on another PC.
+- Merge: cycles and chains were accepted, merged records were offered as targets, the survivor's file did not show the duplicate's work, no un-merge →
+  server rule (`check_party`), merged records out of search, family ids in every tab, a banner with un-merge, Undo on the toast.
+- Several PCs: a restored/undone record overwrote other PCs' edits (now only the fields that differ travel); `done_at`, `closed_at`, `lost_reason` follow
+  their status; party status has a rank (merged wins over archived); Today and duplicate groups are now the same on every PC.
+- Screens: Undo toast was off-screen in Arabic on phones; the record menu was cut off; Enter in a client picker saved the form without the client; tasks
+  screen crashed without client rights; refreshes lost filters, focus and scroll and grew the history; the sync poll stole keyboard focus; listeners doubled
+  after each new sign-in; shortcuts failed on the Arabic keyboard layout; Settings was hidden from team members (their own password and text size).
+- Text is no longer cut silently (refused with a message); wrong types become plain messages instead of server errors.
+
+**Lessons**
+- Independent reviewers with the right to run code found in an hour what 225 green tests missed: ask them to *prove* each finding with a script.
+- A Python heredoc with `\'` inside single quotes breaks the whole script (nothing runs) — write such edit scripts to a file with double quotes.
+- Tests that pin a CSS class (`.page-head`) break with a redesign: prefer roles and ids for what matters.
+
 ## Phases 2 and 3 — design system, shell, people, work, Today, import (2026-09-30, in review)
 
 **What:** the whole interface (no build step, plain ES modules): tokens/themes/fonts/icons, i18n Arabic + English with a test that reads the dictionaries, UI kit, shell,

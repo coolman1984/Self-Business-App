@@ -160,8 +160,8 @@ class Business(ui.UiBase):
         pg.click('.pill-tabs button[data-id=timeline]')
         pg.wait_for_selector('.timeline')
         self.assertIn('ملاحظة على المكرر', pg.inner_text('.timeline'))
-        pg.goto(self.srv.base + '/#/clients/mrg-b')
-        pg.wait_for_url(re.compile('mrg-a'))
+        pg.goto(self.srv.base + '/#/clients/mrg-b')          # the merged record says where it went (no silent redirect)
+        pg.wait_for_selector('.banner:has-text("منال حسين")')
 
     # ---------------------------------------------------------------- sales board
     def test_opportunity_moves_between_stages_by_menu_and_by_drag(self):
@@ -198,7 +198,7 @@ class Business(ui.UiBase):
         pg.wait_for_selector('#view .page-in')
         self.assertEqual(pg.locator('#new-client').count(), 0)
         self.assertEqual(pg.locator('#tb-add').count(), 0)
-        self.assertEqual(pg.locator('#nav-settings').count(), 0)
+        self.assertEqual(pg.locator('.settings-grid').count(), 0)
         pg.goto(self.srv.base + '/#/tasks')
         pg.wait_for_selector('#view .page-in')
         self.assertEqual(pg.locator('#task-quick').count(), 0)

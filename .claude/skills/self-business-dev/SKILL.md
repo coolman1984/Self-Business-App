@@ -58,7 +58,14 @@ Visual matrix: `SBO_PWLIB=... python3 tests/visual/matrix.py [--quick]` → `tes
 - Search: index both a word and its form without the article "ال" (`search._with_bare_words`), because people type both.
 - Registry entities registered by one test file must be removed again (`test_business_sync.tearDownModule`) or later files in the same process see them.
 
+## Design layer
+`web/css/polish.css` is loaded last: depth, colour per stat (`data-tone`), per sales stage (`--lane`), avatar colour (`data-hue` from `format.hueOf`),
+Today hero (`.hero`, ring, pills). Change look there; keep components in `components.css`. Test selectors: prefer ids/roles over layout classes.
+
 ## Pitfalls learned (add new ones here)
+- Python edit scripts in a bash heredoc: `\'` inside a single-quoted Python string ends the string → the whole script fails. Write them to a file.
+- A spreadsheet is hostile input: cap number length/exponent, row index, cells, text; refuse `<!` declarations anywhere.
+- Undo / demo removal / import undo must save with `kind='restore'` so they never win against a real edit on another PC.
 - After renaming a prefix, grep for numeric slices of the renamed strings (`name[4:]`); use a constant.
 - Hand-built wire records in tests must use `journal.env_chash` / `signed_view` (envelope v2).
 - Mutation-check security tests: disable the protection in a copy and confirm the tests fail.

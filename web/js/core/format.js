@@ -37,6 +37,8 @@ export function ago(v) {
 
 export const listSep = () => (lang() === 'ar' ? '، ' : ', ');
 export const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// a stable colour (1-4) for a name, so the same person always gets the same avatar colour
+export const hueOf = (s) => { let x = 0; for (const ch of String(s || '')) x = (x * 31 + ch.codePointAt(0)) >>> 0; return String((x % 5) || ''); };
 export const initials = (name) => (String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => [...w][0]).join('') || '?').toUpperCase();
 export function greeting() {
   const h = new Date().getHours();

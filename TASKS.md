@@ -50,7 +50,8 @@ allowed later; annual licence per activity; freelancer module first).
 - [x] 3.6 Excel/CSV import: preview, column guess (Arabic + English headers), duplicate report (new / same / similar / repeated in file / invalid), fills only empty fields, backup first, undo (`tablefile.py`, `importer.py`)
 - [x] 3.7 Demo data (removable in one step, keeps what was edited), extra fields per client/project/opportunity
 - [x] 3.8 Multi-PC tests for the business entities (`test_business_sync.py`)
-- [ ] 3.9 Independent review (correctness, distributed, security) and fixes
+- [x] 3.9 Independent review (correctness, distributed, security) and fixes — all verified findings fixed with regression tests
+- [x] 3.11 Design pass (`web/css/polish.css`, Today hero) checked in both languages, three themes and on a phone
 - [ ] 3.10 Quotes/agreements/invoices → Phase 4; contact-point table and price lists are not built (phone/e-mail are fields of the party for now, see DATA_MODEL §3)
 
 ## Test map
@@ -72,4 +73,6 @@ allowed later; annual licence per activity; freelancer module first).
 | business layer API (validation, search, scope, money, Today, timeline, duplicates, demo, 2,000-row import) | `tests/test_business.py` | green (24) |
 | business screens in a real browser | `tests/test_ui_business.py` | green (24) |
 | business entities on several PCs | `tests/test_business_sync.py` | green (8) |
+| review regressions (server) | `tests/test_business_review.py` | green (27) |
+| review regressions (browser) | `tests/test_ui_review.py` | green (11) |
 | visual matrix (screenshots, reviewed by eye) | `tests/visual/matrix.py` | run by CI, artefact `visual-matrix` |
