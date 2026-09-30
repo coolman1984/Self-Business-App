@@ -1,0 +1,48 @@
+/* Base: reset, typography, focus, utilities. Logical properties only (margin-inline-start ...) so Arabic (RTL) and English (LTR)
+   share one stylesheet. */
+*, *::before, *::after { box-sizing: border-box; }
+html { font-size: var(--fs); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--font-ui); font-size: 1rem; line-height: 1.55;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; min-height: 100vh;
+}
+h1, h2, h3, h4 { margin: 0; line-height: 1.25; font-weight: 700; letter-spacing: 0; }
+h1 { font-size: 1.7rem; } h2 { font-size: 1.25rem; } h3 { font-size: 1.05rem; } h4 { font-size: 1rem; }
+p { margin: 0; }
+a { color: var(--brand); text-decoration: none; } a:hover { text-decoration: underline; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+img, svg { display: block; max-inline-size: 100%; }
+hr { border: 0; border-block-start: 1px solid var(--line); margin-block: calc(1rem * var(--pad)); }
+::selection { background: var(--accent); color: var(--accent-ink); }
+:focus { outline: none; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+[hidden] { display: none !important; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.num { font-variant-numeric: tabular-nums; unicode-bidi: plaintext; }
+.ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }   /* phone numbers, e-mail, ids inside Arabic text */
+.muted { color: var(--ink-2); }
+.small { font-size: .86rem; }
+.grow { flex: 1 1 auto; min-inline-size: 0; }
+.row { display: flex; align-items: center; gap: calc(.75rem * var(--pad)); }
+.row.wrap { flex-wrap: wrap; }
+.col { display: flex; flex-direction: column; gap: calc(.75rem * var(--pad)); }
+.stack-lg > * + * { margin-block-start: calc(1.25rem * var(--pad)); }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* icons */
+.icon { inline-size: 1.15em; block-size: 1.15em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon.mirror { transform: scaleX(1); }
+[dir='rtl'] .icon.mirror { transform: scaleX(-1); }
+
+/* scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+
+/* animations that explain, never decorate */
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.page-in { animation: rise var(--t-base) var(--ease); }
