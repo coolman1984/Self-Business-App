@@ -7,6 +7,7 @@ import { go } from '../core/router.js';
 import { can } from '../core/session.js';
 import { matches } from '../core/textnorm.js';
 
+const RECORD_ICON = { parties: 'user', projects: 'briefcase', tasks: 'square-check-big', opportunities: 'target', appointments: 'calendar', notes: 'notebook-pen', services: 'tag', attachments: 'paperclip', activities: 'phone', inbox: 'inbox' };
 const commands = [];   // {k: i18n key, ico, run, words?}
 export const registerCommand = (c) => commands.push(c);
 
@@ -46,7 +47,7 @@ export function openPalette() {
     try {
       const hits = await get('/api/search?q=' + encodeURIComponent(q) + '&limit=8', { quiet: true });
       if (my !== seq) return;
-      const rec = hits.map((x) => ({ label: x.title || x.id, hint: x.subtitle || x.entity, ico: 'file-text', group: 'palette.g.records', run: () => go(`/${x.entity}/${encodeURIComponent(x.id)}`) }));
+      const rec = hits.map((x) => ({ label: x.title || x.id, hint: x.subtitle || x.entity, ico: RECORD_ICON[x.entity] || 'file-text', group: 'palette.g.records', run: () => import('../views/open.js').then((m) => m.openRecord(x.entity, x.id)) }));
       items = [...local(q), ...rec]; sel = Math.min(sel, Math.max(0, items.length - 1)); paint();
     } catch (e) { /* offline or not allowed: local commands still work */ }
   }, 180);

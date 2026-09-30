@@ -11,42 +11,7 @@ REQUIRE = os.environ.get('SBO_REQUIRE_UI') == '1'
 
 
 @unittest.skipUnless(OK or REQUIRE, WHY)
-class Shell(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        from playwright.sync_api import sync_playwright
-        cls.srv = ui.new_server('shell')
-        cls.pw = sync_playwright().start()
-        cls.browser = ui.launch(cls.pw)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.browser.close()
-        cls.pw.stop()
-        cls.srv.stop()
-
-    def page(self, width=1360, height=860, tour_done=True, login=True, lang='ar', **ctx):
-        context = self.browser.new_context(viewport={'width': width, 'height': height}, **ctx)
-        self.addCleanup(context.close)
-        context.set_default_timeout(8000)
-        pg = context.new_page()
-        self.errors = []
-        pg.on('pageerror', lambda e: self.errors.append(str(e)))
-        pg.on('console', lambda m: self.errors.append(m.text) if m.type == 'error' and '401' not in m.text else None)
-        prefs = '{"tour":"%s","lang":"%s"}' % ('done' if tour_done else 'todo', lang)
-        pg.add_init_script(f"try{{if(!localStorage.getItem('sbo.prefs.v1'))localStorage.setItem('sbo.prefs.v1', '{prefs.replace(chr(34), chr(92) + chr(34))}')}}catch(e){{}}")
-        pg.goto(self.srv.base + '/')
-        if login:
-            pg.wait_for_selector('.auth')
-            pg.fill('input[autocomplete=username]', ui.ADMIN[0])
-            pg.fill('input[type=password]', ui.ADMIN[1])
-            pg.click('button[type=submit]')
-            pg.wait_for_selector('.sidebar')
-        return pg
-
-    def assertNoErrors(self):
-        self.assertEqual(self.errors, [], 'the browser console has errors')
-
+class Shell(ui.UiBase):
     # ---------------------------------------------------------------- login
     def test_login_wrong_password_shows_plain_message_and_stays(self):
         pg = self.page(login=False)

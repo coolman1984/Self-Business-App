@@ -61,3 +61,48 @@ def set_setting(client, key, value):
     except Exception:  # noqa: BLE001 - new setting
         ver = None
     client.post('/api/commit', {'label': 'setting', 'ops': [{'e': 'settings', 'id': key, 'op': 'put', 'ver': ver, 'row': {'value': value}}]})
+
+
+import unittest  # noqa: E402
+
+
+class UiBase(unittest.TestCase):
+    """One server and one browser per test class; every test gets a fresh browser context (own storage, own session)."""
+    server_name = 'ui'
+
+    @classmethod
+    def setUpClass(cls):
+        from playwright.sync_api import sync_playwright
+        cls.srv = new_server(cls.server_name)
+        cls.pw = sync_playwright().start()
+        cls.browser = launch(cls.pw)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls.pw.stop()
+        cls.srv.stop()
+
+    def page(self, width=1360, height=860, tour_done=True, login=True, lang='ar', user=None, **ctx):
+        context = self.browser.new_context(viewport={'width': width, 'height': height}, **ctx)
+        self.addCleanup(context.close)
+        context.set_default_timeout(8000)
+        pg = context.new_page()
+        self.errors = []
+        pg.on('pageerror', lambda e: self.errors.append(str(e)))
+        pg.on('console', lambda m: self.errors.append(m.text) if (m.type == 'error' and '401' not in m.text and '409' not in m.text and '400' not in m.text and '403' not in m.text)
+              or (m.type == 'warning' and 'missing translation' in m.text) else None)
+        prefs = '{"tour":"%s","lang":"%s"}' % ('done' if tour_done else 'todo', lang)
+        pg.add_init_script("try{if(!localStorage.getItem('sbo.prefs.v1'))localStorage.setItem('sbo.prefs.v1', '%s')}catch(e){}" % prefs.replace('"', '\\"'))
+        pg.goto(self.srv.base + '/')
+        if login:
+            name, pw = user or (ADMIN[0], ADMIN[1])
+            pg.wait_for_selector('.auth')
+            pg.fill('input[autocomplete=username]', name)
+            pg.fill('input[type=password]', pw)
+            pg.click('button[type=submit]')
+            pg.wait_for_selector('.sidebar')
+        return pg
+
+    def assertNoErrors(self):
+        self.assertEqual(self.errors, [], 'the browser console has errors')

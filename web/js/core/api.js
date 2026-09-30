@@ -66,3 +66,13 @@ export async function saveSettings(label, values) {
   return commit(label, ops);
 }
 export const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
+
+// Messages for people: the server sends "E:<code>|English text" for problems it knows; everything else is mapped from the status.
+import { t } from '../i18n/index.js';
+export function friendly(e) {
+  if (!(e instanceof ApiError)) return String(e && e.message || e);
+  if (e.status === 0) return t('offline.banner');
+  const m = /^E:([a-z_]+)\|/.exec(e.message || '');
+  if (m) return t('err.' + m[1]);
+  return { 400: t('err.bad_request'), 401: t('err.login'), 403: t('err.forbidden'), 404: t('state.notfound'), 409: t('err.conflict'), 413: t('err.too_big'), 429: t('err.wait') }[e.status] || t('state.error');
+}

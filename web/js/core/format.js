@@ -12,7 +12,7 @@ export function num(n) { return n == null || n === '' ? '' : new Intl.NumberForm
 export function money(minor, cur = 'EGP') {
   if (minor == null || minor === '') return '';
   const major = Number(minor) / 100;
-  try { return new Intl.NumberFormat(locNum(), { style: 'currency', currency: cur, currencyDisplay: lang() === 'ar' ? 'name' : 'code', maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(major); }
+  try { return new Intl.NumberFormat(locNum(), { style: 'currency', currency: cur, currencyDisplay: lang() === 'ar' ? 'symbol' : 'code', maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(major); }
   catch (e) { return `${major} ${cur}`; }
 }
 

@@ -3,25 +3,36 @@
 import { h, icon } from '../core/dom.js';
 import { t } from '../i18n/index.js';
 import { session } from '../core/session.js';
+import { get } from '../core/api.js';
 import { date, weekday, greeting } from '../core/format.js';
 import { card, emptyState, button, pageHeader, errorBox } from '../ui/kit.js';
+import { friendly, post as apiPost, get as apiGet } from '../core/api.js';
+import { can } from '../core/session.js';
+import { confirmBox, toast } from '../ui/overlay.js';
+import { go } from '../core/router.js';
 import { resolve, href } from '../core/router.js';
 import { quickAddItems, openQuickAdd } from '../ui/quick.js';
 
 const blocks = [];   // {id, order, render(): Node|Promise<Node>|null}
 export const registerTodayBlock = (b) => blocks.push({ order: 50, ...b });
 
+// one request for all blocks of one visit
+let dataPromise = null;
+export const todayData = () => (dataPromise = dataPromise || get('/api/today'));
+
 export async function todayView() {
+  dataPromise = null;
   const name = ((session.me && (session.me.full_name || session.me.username)) || '').split(' ')[0];
   const now = new Date().toISOString();
-  const parts = await Promise.all(blocks.sort((a, b) => a.order - b.order).map(async (b) => {
-    try { return await b.render(); } catch (e) { return card({}, errorBox(e.message)); }
+  const d = await todayData().catch(() => null);
+  const fresh = !!d && !d.counts.clients && !d.counts.tasks && !d.counts.projects && !d.appointmentsToday.length;
+  const parts = fresh ? [] : await Promise.all(blocks.sort((a, b) => a.order - b.order).map(async (b) => {
+    try { return await b.render(); } catch (e) { return card({}, errorBox(friendly(e))); }
   }));
   const content = parts.filter(Boolean);
   return h('div', { class: 'stack-lg' },
-    pageHeader(name ? t('greet.named', { greet: t(greeting()), name }) : t(greeting()), { sub: `${weekday(now)} · ${date(now)}`,
-      actions: quickAddItems().length ? [button(t('today.quick'), { kind: 'primary', ico: 'plus', id: 'quick-add', onClick: (e) => openQuickAdd(e.currentTarget) })] : [] }),
-    content.length ? h('div', { class: 'stack-lg' }, ...content) : startCard());
+    pageHeader(name ? t('greet.named', { greet: t(greeting()), name }) : t(greeting()), { sub: `${weekday(now)} · ${date(now)}` }),
+    fresh || !content.length ? startCard() : h('div', { class: 'today-grid' }, ...content));
 }
 
 function startCard() {
@@ -38,6 +49,16 @@ function startCard() {
         return h('div', { class: 'list-item' }, h('span', { class: 'step-num' }, String(i + 1)), h('span', { class: 'grow' }, t(k)),
           ok ? button(t('action.open'), { small: true, href: href(path), ico: 'arrow-right' }) : h('span', { class: 'chip' }, t('state.soon')));
       })),
-    card({}, h('div', { class: 'card-head' }, h('h2', t('today.nothing.title'))),
-      emptyState({ ico: 'sparkles', title: t('today.nothing.h'), text: t('today.nothing.text') })));
+    card({}, h('div', { class: 'card-head' }, h('h2', t('demo.title'))),
+      emptyState({ ico: 'sparkles', title: t('demo.try'), text: t('demo.try.text'), action: can('data.import') ? button(t('demo.load'), { kind: 'primary', ico: 'download', onClick: loadDemo }) : null })));
+}
+
+export async function loadDemo() {
+  let kinds = [];
+  try { kinds = (await apiGet('/api/get/settings/business.kinds', { quiet: true })).value || []; } catch (e) { /* not set */ }
+  try {
+    await apiPost('/api/demo/load', { lang: document.documentElement.lang, kinds });
+    toast(t('demo.loaded'));
+    go('/?r=' + Date.now());
+  } catch (e) { toast(friendly(e), { kind: 'bad' }); }
 }

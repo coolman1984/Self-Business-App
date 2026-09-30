@@ -29,6 +29,23 @@ def run(script):
 
 @unittest.skipUnless(NODE or REQUIRE, 'Node.js is not installed')
 class JsUnits(unittest.TestCase):
+    def test_every_module_parses_as_an_es_module(self):
+        # a duplicate name, a missing bracket or a stray character would only show in the browser as a blank page
+        bad = []
+        for root, _, files in os.walk(WEB):
+            for fn in files:
+                if fn.endswith('.js'):
+                    path = os.path.join(root, fn)
+                    with open(path, 'rb') as f:
+                        p = subprocess.run([NODE, '--input-type=module', '--check'], stdin=f, capture_output=True, text=True, timeout=60)
+                    if p.returncode:
+                        bad.append(f'{os.path.relpath(path, WEB)}: {p.stderr.strip().splitlines()[-1] if p.stderr.strip() else "error"}')
+        self.assertEqual(bad, [])
+
+    def test_the_syntax_check_really_catches_a_duplicate_name(self):
+        p = subprocess.run([NODE, '--input-type=module', '--check'], input="import { a } from './x.js';\nfunction a() {}\n", capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(p.returncode, 0)
+
     def test_text_folding_matches_typing_without_hamza_and_teh_marbuta(self):
         out = run("""
         import { norm, matches } from './core/textnorm.js';
