@@ -522,9 +522,11 @@ def make_handler(app):
                 row = app.store.get(entity, unquote(rid))
                 if not row or not query_mod.can_see(entity, row, self.access(), app.store):
                     return self.send(404, {'error': 'Not found'})
-                return self.send(200, query_mod.mask(entity, row, set(self.u['perms'])))
+                return self.send(200, query_mod.mask(entity, {**row, **app.store.stamps(entity, row['id'])}, set(self.u['perms'])))
             if p == '/api/search':
                 allowed = [e for e, m in META.items() if m.search and set(m.perms_for('view')) & set(self.u['perms'])]
+                if qs.get('e'):
+                    allowed = [e for e in allowed if e in qs['e'].split(',')]
                 hits = app.index.search(qs.get('q', ''), self.access(), int(qs.get('limit', 20)), allowed) if allowed else []
                 return self.send(200, hits)
             if p == '/api/info':

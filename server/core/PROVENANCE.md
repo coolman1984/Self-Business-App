@@ -9,6 +9,7 @@ harvested module is mentioned in this file and that the core contains no busines
 
 | File | What changed and why |
 |---|---|
+| `tablefile.py`, `launcher.py` | written here for this product (spreadsheet/CSV reader with safety limits; opens the app window). |
 | `ed25519.py`, `tlscert.py`, `node.py`, `nodectl.py`, `xlsx.py` | prefix rename only (`BAMS`→`SBO`, `bams`→`sbo`). `nodectl.py`: rebuild no longer copies the old in-database transaction table. |
 | `journal.py` | rename; **envelope v2** (ADR-008): the signed body carries `ops_hash`, the operations travel (`o`) and are stored beside it, so an authority-signed **erase order** (`kind: erase`, priority 4) can blank personal values in the stored history and the audit rows without breaking hash chains or signatures. `erased` table, `_redact_incoming`, `reapply_erasures`, `redacted` column. Audit column `area_id`→`scope_id`, op key `a`→`sc`, query args `area(s)`→`scope(s)`. |
 | `replica.py` | rename; resolver `min`; **write-once records** (`immutable` entities: the earliest write wins whatever the arrival order, later writes are remembered in `sync_dropped` and flagged `edited-after-issue`); `erase` kind handling (removes stored values, writes null at the highest priority); `touched` set for the derived search index. |

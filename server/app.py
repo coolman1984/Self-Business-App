@@ -4,6 +4,7 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, 'core'))
 
 import bootstrap  # noqa: E402
@@ -18,8 +19,12 @@ def main(background=False):
     except ImportError:
         ASSETS = None
     app = httpd.App(home, os.environ.get('SBO_CONFIG') or os.path.join(home, 'config.json'), root=os.path.dirname(HERE), assets=ASSETS)
-    for name in filter(None, os.environ.get('SBO_ENTITY_MODULES', '').split(',')):
-        mod = __import__(name.strip())
+    names = [n.strip() for n in os.environ.get('SBO_ENTITY_MODULES', '').split(',') if n.strip()]
+    if not names:
+        import business
+        business.routes(app)
+    for name in names:
+        mod = __import__(name)
         if hasattr(mod, 'routes'):
             mod.routes(app)
     httpd.run(app, background)

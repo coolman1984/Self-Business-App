@@ -42,7 +42,7 @@ def launch(pw):
 
 
 def new_server(name='ui', with_owner=True, brand='Nour Academy', extra_cfg=None):
-    srv = Server(name, extra_cfg=extra_cfg).start()
+    srv = Server(name, extra_cfg=extra_cfg, domain='').start()   # the product's own domain (server/business), not the engine test domain
     if with_owner:
         c = srv.client()
         c.post('/api/auth/setup', {'username': ADMIN[0], 'full_name': ADMIN[2], 'password': ADMIN[1]})
