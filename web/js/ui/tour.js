@@ -17,10 +17,16 @@ export function startTour(steps) {
     const vis = target && target.offsetParent !== null ? target.getBoundingClientRect() : null;
     if (vis) {
       Object.assign(spot.style, { display: '', top: vis.top - 6 + 'px', left: vis.left - 6 + 'px', width: vis.width + 12 + 'px', height: vis.height + 12 + 'px' });
-      const below = vis.bottom + 12 + 190 < innerHeight;
-      pop.style.top = (below ? vis.bottom + 14 : Math.max(12, vis.top - 200)) + 'px';
-      const left = Math.min(Math.max(12, vis.left), innerWidth - Math.min(352, innerWidth * 0.92) - 12);
-      pop.style.left = left + 'px'; pop.style.transform = '';
+      const w = Math.min(352, innerWidth * 0.92), rtl = document.documentElement.dir === 'rtl';
+      pop.style.transform = '';
+      if (vis.height > innerHeight * 0.5 && innerWidth > 900) {   // tall target (the menu): put the card next to it
+        pop.style.top = '120px';
+        pop.style.left = Math.min(Math.max(12, rtl ? vis.left - w - 16 : vis.right + 16), innerWidth - w - 12) + 'px';
+      } else {
+        const below = vis.bottom + 12 + 190 < innerHeight;
+        pop.style.top = (below ? vis.bottom + 14 : Math.max(12, vis.top - 200)) + 'px';
+        pop.style.left = Math.min(Math.max(12, vis.left), innerWidth - w - 12) + 'px';
+      }
     } else {
       Object.assign(spot.style, { display: '', top: '50%', left: '50%', width: '0px', height: '0px' });   // no target: only dim the page
       Object.assign(pop.style, { top: '30vh', left: '50%', transform: 'translateX(-50%)' });

@@ -87,6 +87,7 @@ export const EN = {
   'setup.pw.same': 'The two passwords are not the same',
   'setup.finish': 'Start working',
   'setup.saved.partial': 'Your account is ready, but the business name was not saved. You can set it in Settings.',
+  'greet.named': '{greet}, {name}',
   'greet.morning': 'Good morning',
   'greet.afternoon': 'Good afternoon',
   'greet.evening': 'Good evening',

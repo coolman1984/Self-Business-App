@@ -56,7 +56,7 @@ function paintSidebar() {
   const groups = GROUPS.map((g) => [g, NAV.filter((n) => n.group === g && (!n.perm || can(...[].concat(n.perm)))).sort((a, b) => a.order - b.order)]).filter(([, items]) => items.length);
   mount(els.sidebar,
     h('div', { class: 'sb-brand' }, h('div', { class: 'sb-mark' }, brandShort()),
-      h('div', { class: 'grow' }, h('div', { class: 'sb-name' }, brandName()), h('div', { class: 'sb-sub' }, session.node.name || ''))),
+      h('div', { class: 'grow' }, h('div', { class: 'sb-name' }, brandName()))),
     h('nav', { class: 'sb-nav' }, ...groups.map(([g, items]) => h('div', { class: 'sb-group' }, h('h6', t(g)),
       ...items.map((n) => h('a', {
         class: 'sb-link', href: href(n.path), id: 'nav-' + n.id, title: t(n.k),
@@ -82,7 +82,7 @@ function paintTop() {
     h('span', { class: 'sync-pill', id: 'sync-pill', title: t(key) }, h('i', { class: 'dot ' + dot }), h('span', t(key))),
     button('', { kind: 'ghost', ico: themeIco, title: t('theme.quick'), onClick: () => setPref('theme', themeIco === 'moon' ? (resolvedTheme() === 'navy' ? 'navynight' : 'evening') : (resolvedTheme() === 'navynight' ? 'navy' : 'morning')) }),
     button(p.lang === 'ar' ? 'EN' : 'ع', { kind: 'ghost', title: t('lang.switch'), onClick: () => setPref('lang', p.lang === 'ar' ? 'en' : 'ar') }),
-    button('', { kind: 'ghost', ico: 'keyboard', title: t('keys.title'), onClick: showShortcuts }),
+    button('', { kind: 'ghost hide-mobile', ico: 'keyboard', title: t('keys.title'), onClick: showShortcuts }),
     button('', { kind: 'ghost', ico: 'circle-help', title: t('nav.help'), onClick: (e) => menu(e.currentTarget, [
       { label: t('help.center'), ico: 'circle-help', onClick: () => go('/help') },
       { label: t('tour.restart'), ico: 'sparkles', onClick: () => { setPref('tour', 'todo'); go('/'); location.reload(); } },

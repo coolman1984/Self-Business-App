@@ -46,6 +46,7 @@ DEFAULT_CONFIG = {
     'keep_auto_backups': 200,
     'max_upload_mb': 50,
     'open_browser': True,
+    'app_mode': True,
     'session_idle_minutes': 30,
     'session_max_hours': 12,
     'max_failed_logins': 5,
@@ -1073,19 +1074,19 @@ def make_handler(app):
 
 def run(app, background=False, open_browser=None):
     """Starts the servers and blocks until stopped. Returns immediately when another copy already runs on this data folder."""
-    import webbrowser
+    from launcher import open_app
     port = int(app.cfg['port'])
     if not app.instance:
         print('The program is already running on this PC. Opening it in the browser.')
         if not background:
-            webbrowser.open(f'http://localhost:{port}/')
+            open_app(f'http://localhost:{port}/', app.cfg.get('app_mode', True))
         return
     try:
         httpd = Server((app.cfg['host'], port), make_handler(app))
     except OSError:
         print(f'Port {port} is already in use - the program is probably already running. Opening it in the browser.')
         if not background:
-            webbrowser.open(f'http://localhost:{port}/')
+            open_app(f'http://localhost:{port}/', app.cfg.get('app_mode', True))
         return
     try:
         if app.auth.has_users():
@@ -1108,7 +1109,7 @@ def run(app, background=False, open_browser=None):
     print('=' * 64, flush=True)
     app.say('Server started')
     if (app.cfg.get('open_browser', True) if open_browser is None else open_browser) and not background:
-        threading.Timer(0.8, lambda: webbrowser.open(f'http://localhost:{port}/')).start()
+        threading.Timer(0.8, lambda: open_app(f'http://localhost:{port}/', app.cfg.get('app_mode', True))).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

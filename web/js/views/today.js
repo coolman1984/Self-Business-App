@@ -19,7 +19,7 @@ export async function todayView() {
   }));
   const content = parts.filter(Boolean);
   return h('div', { class: 'stack-lg' },
-    pageHeader(`${t(greeting())}${name ? '، ' + name : ''}`, { sub: `${weekday(now)} · ${date(now)}`,
+    pageHeader(name ? t('greet.named', { greet: t(greeting()), name }) : t(greeting()), { sub: `${weekday(now)} · ${date(now)}`,
       actions: quickAddItems().length ? [button(t('today.quick'), { kind: 'primary', ico: 'plus', id: 'quick-add', onClick: (e) => openQuickAdd(e.currentTarget) })] : [] }),
     content.length ? h('div', { class: 'stack-lg' }, ...content) : startCard());
 }

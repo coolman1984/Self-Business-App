@@ -68,6 +68,7 @@
 @media (max-width: 640px) {
   .page-head h1 { font-size: 1.45rem; }
   .tb-search button span { display: none; }
+  .hide-mobile { display: none; }
   .tb-search { flex: 0 0 auto; } .tb-search button { inline-size: 2.75rem; padding: 0; justify-content: center; }
   .tb-spacer { display: block; }
 }

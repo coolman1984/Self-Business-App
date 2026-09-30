@@ -87,6 +87,7 @@ export const AR = {
   'setup.pw.same': 'كلمتين السر مش زي بعض',
   'setup.finish': 'ابدأ الشغل',
   'setup.saved.partial': 'الحساب اتعمل، بس اسم الشغل ماتحفظش. تقدر تحطه من الإعدادات.',
+  'greet.named': '{greet}، {name}',
   'greet.morning': 'صباح الخير',
   'greet.afternoon': 'نهارك سعيد',
   'greet.evening': 'مساء الخير',
