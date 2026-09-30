@@ -1,12 +1,12 @@
 // Import people and companies from Excel or CSV in three calm steps: choose file and columns -> read the report -> import.
 // Nothing is saved before the last button; a backup is made first; the whole import can be undone.
 import { h, icon, mount } from '../core/dom.js';
-import { t } from '../i18n/index.js';
+import { t, hasKey } from '../i18n/index.js';
 import { post, friendly } from '../core/api.js';
 import { card, chip, button, emptyState, pageHeader, select, field, input, table, errorBox } from '../ui/kit.js';
 import { confirmBox, toast } from '../ui/overlay.js';
 import { href, go } from '../core/router.js';
-import { date, num } from '../core/format.js';
+import { date, num, listSep } from '../core/format.js';
 import { queryAll, META, options, phoneShow } from '../core/domain.js';
 
 const FIELDS = ['name', 'name_en', 'kind', 'company', 'phone', 'phone2', 'email', 'address', 'city', 'website', 'tags', 'source', 'tax_id', 'birthday', 'notes'];
@@ -68,9 +68,12 @@ export async function importView() {
       rows.length ? card({ class: 'flush' }, h('div', { class: 'card-head', style: { padding: '1rem 1rem 0' } }, h('h2', t('import.look')), h('span', { class: 'muted small' }, t('import.look.hint'))), table([
         { key: 'line', label: t('import.line'), render: (r) => h('span', { class: 'num' }, r.line) },
         { key: 'name', label: t('f.name'), render: (r) => h('div', h('b', r.name || '—'), r.phone ? h('div', { class: 'ltr num muted small' }, phoneShow(r.phone)) : null) },
-        { key: 'status', label: t('import.status'), render: (r) => h('div', chip(t('import.st.' + r.status), r.status === 'invalid' ? 'bad' : r.status === 'create' ? 'ok' : 'warn'), r.matchName ? h('div', { class: 'small muted' }, t('import.same.as', { name: r.matchName })) : r.matchLine ? h('div', { class: 'small muted' }, t('import.same.line', { n: r.matchLine })) : null, r.warn.length ? h('div', { class: 'small' }, r.warn.map((w) => t('import.w.' + w)).join('، ')) : null) },
+        { key: 'status', label: t('import.status'), render: (r) => h('div', chip(t('import.st.' + r.status), r.status === 'invalid' ? 'bad' : r.status === 'create' ? 'ok' : 'warn'), r.matchName ? h('div', { class: 'small muted' }, t('import.same.as', { name: r.matchName })) : r.matchLine ? h('div', { class: 'small muted' }, t('import.same.line', { n: r.matchLine })) : null, r.warn.length ? h('div', { class: 'small' }, r.warn.map((w) => t('import.w.' + w)).join(listSep())) : null) },
         { key: 'action', label: t('import.do'), render: (r) => (r.status === 'invalid' ? h('span', { class: 'muted' }, t('import.act.skip')) : select([...(r.status === 'match' ? [['fill', t('import.act.fill')]] : []), ['create', t('import.act.create')], ['skip', t('import.act.skip')]], r.act, { 'aria-label': r.name, onChange: (e) => { st.overrides[r.line] = e.target.value; } })) },
       ], rows)) : null,
+      a.rows.length < a.total ? button(t('import.more', { n: num(a.total - a.rows.length) }), { ico: 'chevron-down', onClick: async () => {
+        try { const more = await post('/api/import/rows', { token: a.token, statuses: ['match', 'maybe', 'file_dup', 'invalid', 'warn'], offset: a.rows.length, limit: 100 }); a.rows.push(...more.rows); paint(); } catch (e) { fail(e); }
+      } }) : null,
       h('div', { class: 'row' }, button(t('action.back'), { onClick: () => { st.step = 1; paint(); } }), h('span', { class: 'grow' }), button(t('import.go', { n: num(s.create + s.maybe + s.match) }), { kind: 'primary', ico: 'check', onClick: run })));
   }
 
@@ -82,7 +85,7 @@ export async function importView() {
   function step3() {
     const r = st.report;
     return h('div', { class: 'stack-lg' }, card({}, emptyState({ ico: 'circle-check', title: t('import.done.title'), text: t('import.done.text', { created: num(r.created), filled: num(r.filled), skipped: num(r.skipped) }) }),
-      r.failed.length ? h('div', { class: 'error-box', role: 'alert' }, icon('circle-alert'), h('div', h('b', t('import.failed', { n: r.failed.length })), h('ul', ...r.failed.slice(0, 10).map((f) => h('li', `${t('import.line')} ${f.line}: ${f.why}`))))) : null,
+      r.failed.length ? h('div', { class: 'error-box', role: 'alert' }, icon('circle-alert'), h('div', h('b', t('import.failed', { n: r.failed.length })), h('ul', ...r.failed.slice(0, 10).map((f) => h('li', `${t('import.line')} ${f.line}: ${hasKey('err.' + f.code) ? t('err.' + f.code) : f.why}`))))) : null,
       h('div', { class: 'row', style: { justifyContent: 'center', marginBlockStart: '1rem' } },
         button(t('import.open'), { kind: 'primary', ico: 'users', href: href('/clients') }),
         button(t('import.undo'), { ico: 'undo-2', onClick: async () => { if (await confirmBox({ title: t('import.undo'), text: t('import.undo.text'), danger: true, yes: t('import.undo') })) { try { const u = await post('/api/import/undo', { batch: r.batch }); toast(t('import.undone', { n: u.removed })); go('/clients'); } catch (e) { fail(e); } } } }))));

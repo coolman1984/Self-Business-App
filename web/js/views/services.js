@@ -4,12 +4,12 @@ import { can } from '../core/session.js';
 import { card, chip, button, emptyState, pageHeader, table } from '../ui/kit.js';
 import { money } from '../core/format.js';
 import { queryAll, enumText } from '../core/domain.js';
-import { go } from '../core/router.js';
+import { refresh } from '../core/router.js';
 import { serviceDialog } from './dialogs.js';
 
 export async function servicesView() {
   const rows = await queryAll('services', { sort: 'name' });
-  const reload = () => go('/services?r=' + Date.now());
+  const reload = () => refresh();
   return h('div', pageHeader(t('nav.services'), { sub: t('services.sub'), actions: [can('services.create') ? button(t('service.new'), { kind: 'primary', ico: 'plus', onClick: () => serviceDialog(null, reload) }) : null] }),
     rows.length ? card({ class: 'flush' }, table([
       { key: 'name', label: t('f.service'), render: (s) => h('div', h('b', s.name), s.description ? h('div', { class: 'muted small' }, s.description) : null) },

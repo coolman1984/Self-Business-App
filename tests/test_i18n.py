@@ -78,10 +78,10 @@ class I18n(unittest.TestCase):
                 key = next(x for x in m.groups() if x)
                 if key not in PERMISSIONS:
                     cls.used.setdefault(key, os.path.relpath(path, WEB))
-            cls.prefixes |= {m for m in re.findall(r"t\(\s*'([a-z]+\.)'\s*\+", text)}
+            cls.prefixes |= {m for m in re.findall(r"t\(\s*'([a-z.]+\.)'\s*\+", text)}
             cls.prefixes |= {m + '.' for m in re.findall(r"t\(`([a-z]+)\.\$\{", text)}
             cls.prefixes |= {m + '.' for m in re.findall(r"options\('([a-z]+)'", text)}
-            cls.prefixes |= {m + '.' for m in re.findall(r"t\('([a-z]+)\.'\s*\+", text)}
+            
         cls.prefixes |= {g + '.' for g in GROUPS} | {'f.', 'err.', 'import.f.', 'import.st.', 'import.w.', 'tl.insert.', 'tl.update.', 'tl.delete.', 'dup.by.', 'dup.same.', 'tab.'}
         cls.static = {k for k in cls.used if not k.endswith('.')}
 
@@ -117,7 +117,8 @@ class I18n(unittest.TestCase):
         for fn in os.listdir(srv):
             if fn.endswith('.py'):
                 with open(os.path.join(srv, fn), encoding='utf-8') as f:
-                    codes |= set(re.findall(r"E:([a-z_]+)\|", f.read())) | set(re.findall(r"bad\('([a-z_]+)'", f.read()))
+                    text = f.read()
+                codes |= set(re.findall(r"E:([a-z_]+)\|", text)) | set(re.findall(r"bad\('([a-z_]+)'", text))
         self.assertEqual([c for c in sorted(codes) if 'err.' + c not in self.en], [])
 
     def test_every_field_and_entity_of_the_business_layer_has_a_label(self):

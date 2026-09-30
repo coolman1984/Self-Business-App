@@ -21,7 +21,7 @@ export function picker({ entity = 'parties', value, label, onChange, placeholder
     current = id; shown.value = text; clear.hidden = !id; list.hidden = true; shown.setAttribute('aria-expanded', 'false');
     onChange && onChange(id, text);
   }
-  const find = debounce(async () => {
+  const search = async () => {
     const q = shown.value.trim();
     if (q.length < 1) { list.hidden = true; return; }
     try {
@@ -32,9 +32,17 @@ export function picker({ entity = 'parties', value, label, onChange, placeholder
       if (!hits.length) list.replaceChildren(h('li', { class: 'muted', role: 'presentation' }, t('picker.none')));
       list.hidden = false; shown.setAttribute('aria-expanded', 'true');
     } catch (e) { /* offline: keep typing */ }
-  }, 200);
+  };
+  const find = debounce(search, 200);
   shown.addEventListener('input', () => { if (current) { current = null; clear.hidden = true; onChange && onChange(null, ''); } find(); });
-  shown.addEventListener('keydown', (e) => { if (e.key === 'Escape') list.hidden = true; if (e.key === 'ArrowDown') list.querySelector('li[tabindex]')?.focus(); });
+  shown.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !list.hidden) { e.stopPropagation(); list.hidden = true; }
+    if (e.key === 'ArrowDown') list.querySelector('li[tabindex]')?.focus();
+    if (e.key === 'Enter') {
+      const first = list.querySelector('li[tabindex]');
+      if (!current && shown.value.trim()) { e.preventDefault(); if (first) first.click(); else search().then(() => list.querySelector('li[tabindex]')?.click()); }   // Enter picks the match, it does not save the form without it
+    }
+  });
   box.append(shown, clear, list);
   box.get = () => current;
   box.control = shown;

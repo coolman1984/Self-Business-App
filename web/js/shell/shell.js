@@ -10,7 +10,7 @@ import { menu } from '../ui/overlay.js';
 import { openPalette } from '../ui/palette.js';
 import { quickAddItems, openQuickAdd } from '../ui/quick.js';
 import { showShortcuts } from '../ui/keys.js';
-import { isOffline, onApi } from '../core/api.js';
+import { isOffline, onApi, friendly } from '../core/api.js';
 import { initials } from '../core/format.js';
 
 // Screens (and later modules) add their own entry here; the shell never hard-codes a business screen.
@@ -19,6 +19,7 @@ export const GROUPS = [tk('nav.g.main'), tk('nav.g.work'), tk('nav.g.money'), tk
 export function registerNav(item) { NAV.push({ order: 50, ...item }); }
 
 let els = {};
+let wired = false, pollTimer = null;
 
 export function buildShell() {
   const app = h('div', { class: 'app', dataset: { collapsed: String(getPrefs().sidebar === 'closed'), drawer: 'closed' } });
@@ -30,11 +31,16 @@ export function buildShell() {
     h('div', { class: 'overlay only-mobile', id: 'drawer-back', style: { display: 'none' }, onClick: () => drawer(false) }));
   els = { app, sidebar, banner, top, view };
   paintSidebar(); paintTop(); paintBanner();
-  onRoute(showRoute);
-  onLang(() => { paintSidebar(); paintTop(); paintBanner(); showRoute(here()); });
-  onSession(() => { paintSidebar(); paintTop(); });
-  onApi('offline', paintBanner); onApi('online', paintBanner);
-  setInterval(pollSync, 15000); pollSync();
+  if (!wired) {          // the shell can be rebuilt after a new sign-in: listen and poll only once
+    wired = true;
+    onRoute(showRoute);
+    onLang(() => { paintSidebar(); paintTop(); paintBanner(); showRoute(here(), true); });
+    onSession(() => { paintSidebar(); paintTop(); });
+    onApi('offline', paintBanner); onApi('online', paintBanner);
+  }
+  clearInterval(pollTimer);
+  pollTimer = setInterval(pollSync, 15000);
+  pollSync();
   return app;
 }
 
@@ -94,21 +100,23 @@ function paintBanner() {
 }
 
 let token = 0;
-export async function showRoute(r) {
+export async function showRoute(r, refreshing = false) {
   if (!els.view) return;
   const my = ++token;
+  const y = scrollY;
   paintSidebar();
   if (!r) { mount(els.view, h('div', { class: 'page-in' }, errorBox(t('state.notfound'), () => go('/')))); return; }
   document.title = `${t(r.meta.title || 'nav.today')} · ${brandName()}`;
-  mount(els.view, skeleton(5));
+  if (!refreshing) mount(els.view, skeleton(5));          // a refresh keeps the old screen until the new one is ready (no flicker, no jump)
   try {
     const node = await r.handler({ params: r.params, query: r.query, view: els.view });
     if (my !== token) return;
-    mount(els.view, h('div', { class: 'page-in' }, node));
+    mount(els.view, h('div', { class: refreshing ? '' : 'page-in' }, node));
   } catch (e) {
     if (my !== token) return;
-    mount(els.view, errorBox(e.message === 'offline' ? t('offline.banner') : e.message, () => showRoute(r)));
+    mount(els.view, errorBox(friendly(e), () => showRoute(r)));
   }
+  if (refreshing) { scrollTo(0, y); return; }
   els.view.focus({ preventScroll: true });
   scrollTo(0, 0);
 }

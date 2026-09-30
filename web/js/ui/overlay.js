@@ -58,9 +58,13 @@ export function menu(anchor, items) {
     h('button', { role: 'menuitem', type: 'button', onClick: () => { close(); it.onClick(); } }, it.ico ? icon(it.ico) : null, it.label)));
   const r = anchor.getBoundingClientRect();
   document.body.append(el);
-  const rtl = document.documentElement.dir === 'rtl';
   el.style.top = `${r.bottom + scrollY + 4}px`;
-  if (rtl) el.style.right = `${Math.max(8, innerWidth - r.right)}px`; else el.style.left = `${Math.max(8, r.left)}px`;
+  el.style.left = '0px';
+  const w = el.getBoundingClientRect().width;
+  // line the menu up with the button's start edge, then keep it fully inside the window (the button is often at the edge)
+  const start = document.documentElement.dir === 'rtl' ? r.right - w : r.left;
+  el.style.left = `${Math.min(Math.max(8, start), Math.max(8, innerWidth - w - 8)) + scrollX}px`;
+  if (r.bottom + el.getBoundingClientRect().height + 8 > innerHeight && r.top > el.getBoundingClientRect().height + 8) el.style.top = `${r.top + scrollY - el.getBoundingClientRect().height - 4}px`;
   const close = () => { el.remove(); document.removeEventListener('mousedown', away, true); document.removeEventListener('keydown', esc, true); };
   const away = (e) => { if (!el.contains(e.target)) close(); };
   const esc = (e) => { if (e.key === 'Escape') { close(); anchor.focus(); } };

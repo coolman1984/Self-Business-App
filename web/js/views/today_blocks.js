@@ -6,22 +6,23 @@ import { card, chip, button, emptyState } from '../ui/kit.js';
 import { toast } from '../ui/overlay.js';
 import { money, num, date, time } from '../core/format.js';
 import { updateRecord, queryAll, dueState, META } from '../core/domain.js';
-import { href, go } from '../core/router.js';
+import { href, refresh as refreshRoute } from '../core/router.js';
+import { friendly } from '../core/api.js';
 import { registerTodayBlock, todayData } from './today.js';
 import { taskDialog, appointmentDialog, opportunityDialog } from './dialogs.js';
 
-const refresh = () => go('/?r=' + Date.now());
+const refresh = () => refreshRoute();
 
 function taskRow(x, names, ctx = {}) {
   const box = h('input', { class: 'check', type: 'checkbox', 'aria-label': x.title, disabled: !can('tasks.edit'), onChange: async (e) => {
-    try { await updateRecord(t('task.edit'), 'tasks', x, { status: 'done' }); toast(t('task.done.toast'), { undo: async () => { const fresh = (await queryAll('tasks', { filters: [['id', 'eq', x.id]] }))[0]; await updateRecord(t('task.edit'), 'tasks', fresh, { status: 'todo' }); refresh(); } }); refresh(); }
-    catch (err) { e.target.checked = false; toast(String(err.message), { kind: 'bad' }); }
+    try { const before = x.status; await updateRecord(t('task.edit'), 'tasks', x, { status: 'done' }); toast(t('task.done.toast'), { undo: async () => { const fresh = (await queryAll('tasks', { filters: [['id', 'eq', x.id]] }))[0]; await updateRecord(t('task.edit'), 'tasks', fresh, { status: before }); refresh(); } }); refresh(); }
+    catch (err) { e.target.checked = false; toast(friendly(err), { kind: 'bad' }); }
   } });
-  return h('div', { class: 'list-item' }, box, h('a', { class: 'grow', href: '#', onClick: (e) => { e.preventDefault(); taskDialog(x, refresh); } }, h('div', x.title), names[x.party_id] ? h('div', { class: 'muted small' }, names[x.party_id]) : null),
+  return h('div', { class: 'list-item' }, box, h('a', { class: 'grow', href: '#', onClick: (e) => { e.preventDefault(); can('tasks.edit') && taskDialog(x, refresh); } }, h('div', x.title), names[x.party_id] ? h('div', { class: 'muted small' }, names[x.party_id]) : null),
     x.priority === 'urgent' || x.priority === 'high' ? chip(t('prio.' + x.priority), x.priority === 'urgent' ? 'bad' : 'warn') : null,
     x.due ? h('span', { class: 'small due-' + dueState(x.due) }, x.due.length > 10 && ctx.time ? time(x.due) : date(x.due)) : null);
 }
-const apptRow = (a, names) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); appointmentDialog(a, refresh); } }, icon('calendar'),
+const apptRow = (a, names) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); can('calendar.edit') && appointmentDialog(a, refresh); } }, icon('calendar'),
   h('span', { class: 'small num muted', style: { minInlineSize: '3.4rem' } }, a.starts_at.length > 10 ? time(a.starts_at) : t('appt.allday')),
   h('span', { class: 'grow' }, h('div', a.title), names[a.party_id] ? h('div', { class: 'muted small' }, names[a.party_id]) : null), a.location ? h('span', { class: 'muted small' }, a.location) : null);
 
@@ -40,7 +41,7 @@ registerTodayBlock({ id: 'attention', order: 10, async render() {
   if (!late && !d.inbox) return null;
   return card({ class: 'accent', id: 'block-attention' }, h('div', { class: 'card-head' }, h('h2', t('today.attention')), chip(String(late + (d.inbox ? 1 : 0)), 'warn')),
     ...d.overdue.map((x) => taskRow(x, d.names)),
-    ...d.followUps.map((o) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); opportunityDialog(o, refresh); } }, icon('target'), h('span', { class: 'grow' }, h('div', o.title), h('div', { class: 'muted small' }, [d.names[o.party_id], o.next_step].filter(Boolean).join(' · '))), chip(t('today.followup'), 'accent'), h('span', { class: 'small due-late' }, date(o.next_step_at)))),
+    ...d.followUps.map((o) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); can('sales.edit') && opportunityDialog(o, refresh); } }, icon('target'), h('span', { class: 'grow' }, h('div', o.title), h('div', { class: 'muted small' }, [d.names[o.party_id], o.next_step].filter(Boolean).join(' · '))), chip(t('today.followup'), 'accent'), h('span', { class: 'small due-late' }, date(o.next_step_at)))),
     ...d.urgentUndated.map((x) => taskRow(x, d.names)),
     d.inbox ? h('a', { class: 'list-item', href: href('/inbox') }, icon('inbox'), h('span', { class: 'grow' }, t('today.inbox', { n: d.inbox })), icon('chevron-right')) : null);
 } });
@@ -70,5 +71,5 @@ registerTodayBlock({ id: 'pipeline', order: 40, async render() {
   const max = Math.max(...META.openStages.map((s) => (d.pipeline[s] || {}).count || 0), 1);
   return card({}, h('div', { class: 'card-head' }, h('h2', t('today.pipeline')), h('a', { class: 'small', href: href('/sales') }, t('nav.sales'))),
     ...META.openStages.map((s) => { const b = d.pipeline[s] || { count: 0 }; return h('div', { class: 'list-item' }, h('span', { style: { minInlineSize: '6rem' } }, t('stage.' + s)), h('div', { class: 'progress grow' }, h('i', { style: { width: Math.round(b.count * 100 / max) + '%' } })), h('span', { class: 'num small', style: { minInlineSize: '2rem', textAlign: 'end' } }, num(b.count)), b.value !== undefined ? h('span', { class: 'num small muted', style: { minInlineSize: '7rem', textAlign: 'end' } }, money(b.value)) : null); }),
-    d.stalled.length ? h('p', { class: 'muted small', style: { marginBlockStart: '.6rem' } }, t('today.stalled', { n: d.stalled.length })) : null);
+    d.stalled.length ? h('p', { class: 'muted small', style: { marginBlockStart: '.6rem' } }, t('today.stalled', { n: d.stalledCount })) : null);
 } });

@@ -10,7 +10,7 @@ import { toast } from '../ui/overlay.js';
 function frame(...form) {
   const p = getPrefs();
   return h('div', { class: 'auth page-in' },
-    h('div', { class: 'auth-tools' }, button(p.lang === 'ar' ? 'EN' : 'ع', { kind: 'ghost', title: t('lang.switch'), onClick: () => setPref('lang', p.lang === 'ar' ? 'en' : 'ar') })),
+    h('div', { class: 'auth-tools' }, button(p.lang === 'ar' ? 'EN' : 'ع', { kind: 'ghost', title: t('lang.switch'), onClick: () => { setPref('lang', p.lang === 'ar' ? 'en' : 'ar'); location.reload(); } })),
     h('section', { class: 'auth-hero' },
       h('div', { class: 'row' }, h('div', { class: 'sb-mark' }, [...(brandName() || '?')][0]), h('b', { style: { fontSize: '1.15rem' } }, brandName())),
       h('div', h('h2', t('auth.hero.title')), h('p', t('auth.hero.text'))),

@@ -16,12 +16,13 @@ function typing(e) {
 
 export function initKeys() {
   addEventListener('keydown', (e) => {
+    const physical = e.code && e.code.startsWith('Key') ? e.code.slice(3).toLowerCase() : (e.code === 'Slash' ? (e.shiftKey ? '?' : '/') : e.key);   // the key, not the letter: works with the Arabic layout too
     if (e.ctrlKey || e.metaKey || e.altKey) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); const d = defs.find((x) => x.keys === 'mod+k'); d && d.run(); }
+      if ((e.ctrlKey || e.metaKey) && physical === 'k') { e.preventDefault(); const d = defs.find((x) => x.keys === 'mod+k'); d && d.run(); }
       return;
     }
-    if (typing(e) || document.querySelector('.modal,.drawer,.palette')) { if (e.key === '?' && !typing(e)) return; return; }
-    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (typing(e) || document.querySelector('.modal,.drawer,.palette')) return;
+    const key = physical.length === 1 ? physical.toLowerCase() : physical;
     pending = pending ? `${pending} ${key}` : key;
     clearTimeout(timer); timer = setTimeout(() => { pending = ''; }, 900);
     const hit = defs.find((d) => d.keys === pending);

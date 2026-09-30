@@ -6,23 +6,17 @@ import { friendly } from '../core/api.js';
 import { card, chip, button, emptyState, pageHeader, table, segmented, errorBox } from '../ui/kit.js';
 import { menu, toast } from '../ui/overlay.js';
 import { money, date } from '../core/format.js';
-import { META, queryAll, updateRecord, partyName, dueState, isoDate } from '../core/domain.js';
+import { META, queryAll, updateRecord, namesOf, dueState, isoDate } from '../core/domain.js';
 import { opportunityDialog } from './dialogs.js';
-
-async function partyNames(ids) {
-  const out = {};
-  const list = [...new Set(ids.filter(Boolean))];
-  for (let i = 0; i < list.length; i += 200) (await queryAll('parties', { filters: [['id', 'in', list.slice(i, i + 200)]] })).forEach((p) => (out[p.id] = p.name));
-  return out;
-}
 
 export async function salesView() {
   const opps = await queryAll('opportunities', { sort: 'rowid', desc: true });
-  const names = await partyNames(opps.map((o) => o.party_id));
+  const names = await namesOf('parties', 'name', opps.map((o) => o.party_id));
   let mode = 'board', showClosed = false;
   const root = h('div');
+  const subEl = h('span');
   const showMoney = can('money.view');
-  const reload = async () => { const fresh = await queryAll('opportunities', { sort: 'rowid', desc: true }); opps.splice(0, opps.length, ...fresh); Object.assign(names, await partyNames(fresh.map((o) => o.party_id))); paint(); };
+  const reload = async () => { const fresh = await queryAll('opportunities', { sort: 'rowid', desc: true }); opps.splice(0, opps.length, ...fresh); Object.assign(names, await namesOf('parties', 'name', fresh.map((o) => o.party_id))); paint(); };
 
   async function move(o, stage) {
     if (o.stage === stage) return;
@@ -39,8 +33,10 @@ export async function salesView() {
       h('div', { class: 'row', style: { justifyContent: 'space-between' } }, showMoney && o.value_minor != null ? h('b', { class: 'num small' }, money(o.value_minor)) : h('span'),
         o.next_step_at ? h('span', { class: 'small due-' + dueState(o.next_step_at) }, icon('clock'), ' ' + date(o.next_step_at)) : null),
       can('sales.edit') ? h('div', { class: 'row', style: { justifyContent: 'flex-end' } }, button(t('opp.move'), { kind: 'ghost small', ico: 'arrow-right', onClick: (e) => { e.stopPropagation(); menu(e.currentTarget, META.stages.map((s) => ({ label: t('stage.' + s), ico: s === o.stage ? 'check' : undefined, onClick: () => move(o, s) }))); } })) : null);
-    el.addEventListener('click', (e) => { if (!e.target.closest('button')) opportunityDialog(o, reload); });
-    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === el) opportunityDialog(o, reload); });
+    if (can('sales.edit')) {
+      el.addEventListener('click', (e) => { if (!e.target.closest('button')) opportunityDialog(o, reload); });
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === el) opportunityDialog(o, reload); });
+    }
     el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', o.id); el.classList.add('dragging'); });
     el.addEventListener('dragend', () => el.classList.remove('dragging'));
     return el;
@@ -66,14 +62,15 @@ export async function salesView() {
       { key: 'stage', label: t('f.stage'), render: (o) => chip(t('stage.' + o.stage), o.stage === 'won' ? 'ok' : o.stage === 'lost' ? 'bad' : 'info') },
       ...(showMoney ? [{ key: 'value', label: t('f.value'), num: true, render: (o) => (o.value_minor != null ? money(o.value_minor) : '') }] : []),
       { key: 'next', label: t('f.next_step'), render: (o) => (o.next_step ? h('div', o.next_step, o.next_step_at ? h('div', { class: 'small due-' + dueState(o.next_step_at) }, date(o.next_step_at)) : null) : '') },
-    ], opps.filter((o) => showClosed || META.openStages.includes(o.stage)), { onOpen: (o) => opportunityDialog(o, reload) }));
+    ], opps.filter((o) => showClosed || META.openStages.includes(o.stage)), { onOpen: can('sales.edit') ? (o) => opportunityDialog(o, reload) : null }));
   }
   function paint() {
+    const open = opps.filter((o) => META.openStages.includes(o.stage));
+    subEl.textContent = showMoney ? t('opp.sub.money', { n: open.length, v: money(open.reduce((a, o) => a + (o.value_minor || 0), 0)) }) : t('opp.sub', { n: open.length });
     mount(root, opps.length ? (mode === 'board' ? board() : list()) : emptyState({ ico: 'target', title: t('opp.empty.title'), text: t('opp.empty.text'), action: can('sales.create') ? button(t('opp.new'), { kind: 'primary', ico: 'plus', onClick: () => opportunityDialog(null, reload) }) : null }));
   }
   paint();
-  const open = opps.filter((o) => META.openStages.includes(o.stage));
-  return h('div', pageHeader(t('nav.sales'), { sub: showMoney ? t('opp.sub.money', { n: open.length, v: money(open.reduce((a, o) => a + (o.value_minor || 0), 0)) }) : t('opp.sub', { n: open.length }), actions: [
+  return h('div', pageHeader(t('nav.sales'), { sub: subEl, actions: [
     segmented([['board', t('view.board')], ['list', t('view.list')]], mode, (v) => { mode = v; paint(); }),
     button(t('opp.closed'), { ico: 'circle-check', onClick: (e) => { showClosed = !showClosed; e.currentTarget.classList.toggle('primary', showClosed); paint(); } }),
     can('sales.create') ? button(t('opp.new'), { kind: 'primary', ico: 'plus', onClick: () => opportunityDialog(null, reload) }) : null] }), root);

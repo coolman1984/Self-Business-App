@@ -1,15 +1,15 @@
 // Everything the business screens share: words (stages, statuses ...), saving records safely, soft delete with undo,
 // phone links, money entry, record routes. No screen talks to the API for saving except through here.
 import { get, post, commit, query, uuid, ApiError } from './api.js';
-import { t } from '../i18n/index.js';
-import { session } from './session.js';
+import { t, hasKey } from '../i18n/index.js';
+import { session, can } from './session.js';
 import { norm } from './textnorm.js';
 
 export let META = null;
 export async function loadMeta() { if (!META) META = await get('/api/business/meta'); return META; }
 
 // ---------- reading
-export async function queryAll(entity, { filters = [], sort, desc, search, max = 2000 } = {}) {
+export async function queryAll(entity, { filters = [], sort, desc, search, max = 5000 } = {}) {
   const out = [];
   let cursor;
   do {
@@ -17,6 +17,7 @@ export async function queryAll(entity, { filters = [], sort, desc, search, max =
     out.push(...page.rows);
     cursor = page.next;
   } while (cursor && out.length < max);
+  out.truncated = !!cursor;      // true when there is more than what was loaded
   return out;
 }
 export async function getRecord(entity, id) { return get(`/api/get/${entity}/${encodeURIComponent(id)}`); }
@@ -37,6 +38,15 @@ export async function softDelete(label, entity, row, extraOps = []) {
 }
 
 // ---------- names
+const VIEW_PERM = { parties: 'clients.view', projects: 'projects.view' };
+// {id: name} for some records; empty (and no request) when the person may not see that kind of record
+export async function namesOf(entity, key, ids) {
+  const out = {};
+  const list = [...new Set(ids.filter(Boolean))];
+  if (!list.length || !can(VIEW_PERM[entity])) return out;
+  for (let i = 0; i < list.length; i += 200) (await queryAll(entity, { filters: [['id', 'in', list.slice(i, i + 200)]] })).forEach((p) => (out[p.id] = p[key]));
+  return out;
+}
 export const partyName = (p) => (p && (p.name || p.name_en)) || '';
 export const pathFor = { parties: (id) => `/clients/${encodeURIComponent(id)}`, opportunities: () => '/sales', projects: (id) => `/projects/${encodeURIComponent(id)}`,
   tasks: () => '/tasks', appointments: () => '/calendar', services: () => '/services', notes: () => '/clients', inbox: () => '/inbox', activities: () => '/clients' };
@@ -70,7 +80,7 @@ export const ENUM_KEYS = { 'opportunities/stage': 'stage', 'projects/status': 'p
   'party_roles/role': 'role', 'opportunities/source': 'source', 'parties/source': 'source', 'projects/billing_mode': 'billing', 'services/unit': 'unit' };
 export function enumText(entity, field, value) {
   const g = ENUM_KEYS[`${entity}/${field}`];
-  return g && value ? t(`${g}.${value}`) : value;
+  return g && value && hasKey(`${g}.${value}`) ? t(`${g}.${value}`) : value;       // a value typed or imported by a person is shown as it is
 }
 export const options = (group, ids) => ids.map((id) => [id, t(`${group}.${id}`)]);
 

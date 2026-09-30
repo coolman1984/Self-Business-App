@@ -81,7 +81,7 @@ export function partyDialog(row, onDone, defaults = {}) {
       if (editing) { await updateRecord(t('client.edit'), 'parties', row, rest); done(onDone, row.id); return; }
       const id = uuid();
       await commit(t('client.new'), [opPut('parties', id, { ...rest, kind: rest.kind || 'person', status: 'active' }),
-        opPut('party_roles', `${id}:${_role || 'lead'}`, { party_id: id, role: _role || 'lead', since: isoDate() })]);
+        opPut('party_roles', `${id}:${_role || 'lead'}`, { party_id: id, role: _role || 'lead' })]);
       toast(t('toast.saved'));
       done(onDone, id);
     },
@@ -236,7 +236,9 @@ export function relationDialog(party, onDone) {
     onSave: async (val) => {
       const from = party.kind === 'org' ? val.other : party.id;
       const to = party.kind === 'org' ? party.id : val.other;
-      await commit(t('rel.new'), [opPut('party_relations', `${from}:${to}:${val.kind}`, { from_party: from, to_party: to, kind: val.kind, title: val.title })]);
+      const rid = `${from}:${to}:${val.kind}`;
+      const existing = await getRecord('party_relations', rid).catch(() => null);      // the same link again only updates the job title
+      await commit(t('rel.new'), [opPut('party_relations', rid, { from_party: from, to_party: to, kind: val.kind, title: val.title }, existing ? existing.ver : undefined)]);
       toast(t('toast.saved')); done(onDone);
     },
   });

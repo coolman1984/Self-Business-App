@@ -35,6 +35,7 @@ export function ago(v) {
   return rtf.format(0, 'second');
 }
 
+export const listSep = () => (lang() === 'ar' ? '، ' : ', ');
 export const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 export const initials = (name) => (String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => [...w][0]).join('') || '?').toUpperCase();
 export function greeting() {

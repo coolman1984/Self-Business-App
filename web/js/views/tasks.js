@@ -7,25 +7,20 @@ import { card, chip, button, emptyState, pageHeader, table } from '../ui/kit.js'
 import { toast } from '../ui/overlay.js';
 import { date } from '../core/format.js';
 import { matches } from '../core/textnorm.js';
-import { queryAll, updateRecord, createRecord, dueState, isoDate, addDays } from '../core/domain.js';
-import { go } from '../core/router.js';
+import { queryAll, updateRecord, createRecord, dueState, isoDate, addDays, namesOf } from '../core/domain.js';
+import { refresh } from '../core/router.js';
 import { taskDialog } from './dialogs.js';
 
-async function names(entity, key, ids) {
-  const out = {};
-  const list = [...new Set(ids.filter(Boolean))];
-  for (let i = 0; i < list.length; i += 200) (await queryAll(entity, { filters: [['id', 'in', list.slice(i, i + 200)]] })).forEach((p) => (out[p.id] = p[key]));
-  return out;
-}
+const kept = { f: 'open', q: '', focusQuick: false };       // the filter and the search text survive a refresh of the list
 const PRIO = { urgent: 'bad', high: 'warn', normal: '', low: '' };
 
 export async function tasksView() {
   const tasks = await queryAll('tasks', { sort: 'rowid', desc: true });
-  const [pn, jn] = await Promise.all([names('parties', 'name', tasks.map((x) => x.party_id)), names('projects', 'title', tasks.map((x) => x.project_id))]);
-  const state = { f: 'open', q: '' };
+  const [pn, jn] = await Promise.all([namesOf('parties', 'name', tasks.map((x) => x.party_id)), namesOf('projects', 'title', tasks.map((x) => x.project_id))]);
+  const state = kept;
   const root = h('div');
   const today = isoDate();
-  const reload = () => go('/tasks?r=' + Date.now());
+  const reload = () => refresh();
   const FILTERS = [['open', t('filter.open')], ['today', t('filter.today')], ['late', t('filter.late')], ['week', t('filter.week')], ['done', t('filter.done')], ['all', t('filter.all')]];
   const pass = (x) => {
     const live = ['todo', 'doing', 'waiting'].includes(x.status);
@@ -41,8 +36,9 @@ export async function tasksView() {
   };
   async function tick(x, on, box) {
     try {
+      const before = x.status;
       await updateRecord(t('task.edit'), 'tasks', x, { status: on ? 'done' : 'todo' });
-      if (on) toast(t('task.done.toast'), { undo: async () => { const fresh = (await queryAll('tasks', { filters: [['id', 'eq', x.id]] }))[0]; await updateRecord(t('task.edit'), 'tasks', fresh, { status: 'todo' }); reload(); } });
+      if (on) toast(t('task.done.toast'), { undo: async () => { const fresh = (await queryAll('tasks', { filters: [['id', 'eq', x.id]] }))[0]; await updateRecord(t('task.edit'), 'tasks', fresh, { status: before === 'done' ? 'todo' : before }); reload(); } });
       reload();
     } catch (e) { box.checked = !on; toast(friendly(e), { kind: 'bad' }); }
   }
@@ -54,17 +50,18 @@ export async function tasksView() {
       { key: 'due', label: t('f.due'), render: (x) => (x.due ? h('span', { class: x.status === 'done' ? 'muted' : 'due-' + dueState(x.due) }, date(x.due)) : h('span', { class: 'muted' }, '—')) },
       { key: 'prio', label: t('f.priority'), render: (x) => (x.priority && x.priority !== 'normal' ? chip(t('prio.' + x.priority), PRIO[x.priority]) : '') },
       { key: 'status', label: t('f.status'), render: (x) => (['doing', 'waiting'].includes(x.status) ? chip(t('tstatus.' + x.status), 'info') : '') },
-    ], rows, { onOpen: (x) => taskDialog(x, reload) }))
+    ], rows, { onOpen: can('tasks.edit') ? (x) => taskDialog(x, reload) : null }))
       : emptyState({ ico: 'square-check-big', title: tasks.length ? t('tasks.none.filter') : t('tasks.empty.title'), text: tasks.length ? '' : t('tasks.empty.text') }));
   }
   const quick = h('input', { class: 'input', placeholder: t('task.quick'), 'aria-label': t('task.quick'), id: 'task-quick', onKeydown: async (e) => {
     if (e.key === 'Enter' && quick.value.trim()) {
-      try { await createRecord(t('task.new'), 'tasks', { title: quick.value.trim(), status: 'todo', priority: 'normal', kind: 'task', due: state.f === 'today' ? today : undefined }); reload(); } catch (err) { toast(friendly(err), { kind: 'bad' }); }
+      try { await createRecord(t('task.new'), 'tasks', { title: quick.value.trim(), status: 'todo', priority: 'normal', kind: 'task', due: state.f === 'today' ? today : undefined }); state.focusQuick = true; reload(); } catch (err) { toast(friendly(err), { kind: 'bad' }); }
     }
   } });
   const filters = h('div', { class: 'filters', role: 'group' }, ...FILTERS.map(([id, label]) => h('button', { type: 'button', dataset: { v: id }, 'aria-pressed': String(state.f === id), onClick: () => { state.f = id; [...filters.children].forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === id))); paint(); } }, label)));
-  const search = h('input', { class: 'input', type: 'search', placeholder: t('tasks.search'), 'aria-label': t('tasks.search'), onInput: (e) => { state.q = e.target.value; paint(); } });
+  const search = h('input', { class: 'input', type: 'search', value: state.q, placeholder: t('tasks.search'), 'aria-label': t('tasks.search'), onInput: (e) => { state.q = e.target.value; paint(); } });
   paint();
+  if (state.focusQuick) { state.focusQuick = false; setTimeout(() => document.getElementById('task-quick')?.focus(), 60); }
   return h('div', pageHeader(t('nav.tasks'), { sub: t('tasks.sub'), actions: [can('tasks.create') ? button(t('task.new'), { kind: 'primary', ico: 'plus', onClick: () => taskDialog(null, reload) }) : null] }),
     can('tasks.create') ? card({ style: { marginBlockEnd: '1rem' } }, quick) : null,
     h('div', { class: 'toolbar' }, filters, h('div', { class: 'searchbox' }, icon('search'), search)), root);

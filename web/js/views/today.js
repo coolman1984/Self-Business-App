@@ -25,7 +25,8 @@ export async function todayView() {
   const name = ((session.me && (session.me.full_name || session.me.username)) || '').split(' ')[0];
   const now = new Date().toISOString();
   const d = await todayData().catch(() => null);
-  const fresh = !!d && !d.counts.clients && !d.counts.tasks && !d.counts.projects && !d.appointmentsToday.length;
+  const seen = d ? [d.counts.clients, d.counts.tasks, d.counts.projects].filter((n) => n !== null && n !== undefined) : [];
+  const fresh = !!d && seen.every((n) => !n) && !d.appointmentsToday.length && !d.followUps.length && !d.inbox && !d.appointmentsNext.length && !Object.keys(d.pipeline).length;
   const parts = fresh ? [] : await Promise.all(blocks.sort((a, b) => a.order - b.order).map(async (b) => {
     try { return await b.render(); } catch (e) { return card({}, errorBox(friendly(e))); }
   }));
@@ -59,6 +60,6 @@ export async function loadDemo() {
   try {
     await apiPost('/api/demo/load', { lang: document.documentElement.lang, kinds });
     toast(t('demo.loaded'));
-    go('/?r=' + Date.now());
+    go('/');
   } catch (e) { toast(friendly(e), { kind: 'bad' }); }
 }

@@ -32,5 +32,9 @@ export const brandName = () => session.about.brand_name || session.about['brand.
 export const brandShort = () => session.about['brand.short'] || [...(brandName() || '?')][0];
 
 export async function pollSync() {
-  try { const v = await get('/api/version', { quiet: true }); session.sync = v.sync || { state: 'single' }; emit(); } catch (e) { /* offline banner handles it */ }
+  try {
+    const v = await get('/api/version', { quiet: true });
+    const next = v.sync || { state: 'single' };
+    if (JSON.stringify(next) !== JSON.stringify(session.sync)) { session.sync = next; emit(); }      // repaint only when the light changed (keyboard focus stays where it is)
+  } catch (e) { /* offline banner handles it */ }
 }

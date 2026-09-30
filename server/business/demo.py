@@ -72,12 +72,12 @@ def build(lang='ar', kinds=()):
         pid = f'demo-p{n}'
         P.append(pid)
         put('parties', pid, {'kind': 'person', 'name': name, 'phone': f'+2010000000{n:02d}', 'email': f'demo{n}@example.com', 'city': city, 'status': 'active', 'tags': T['tag']})
-        put('party_roles', f'{pid}:{role}', {'party_id': pid, 'role': role, 'since': _d(-30 * n)})
+        put('party_roles', f'{pid}:{role}', {'party_id': pid, 'role': role})
     orgs = ORGS[lg]
     for n, (name, role) in enumerate(orgs, 1):
         oid = f'demo-o{n}'
         put('parties', oid, {'kind': 'org', 'name': name, 'phone': f'+2022222220{n}', 'email': f'info{n}@example.com', 'city': people[0][2], 'status': 'active', 'tags': T['tag']})
-        put('party_roles', f'{oid}:{role}', {'party_id': oid, 'role': role, 'since': _d(-90)})
+        put('party_roles', f'{oid}:{role}', {'party_id': oid, 'role': role})
     put('party_relations', 'demo-p1:demo-o1:works_at', {'from_party': 'demo-p1', 'to_party': 'demo-o1', 'kind': 'works_at', 'title': 'Training manager' if lg == 'en' else 'مديرة التدريب'})
     put('party_relations', 'demo-p6:demo-o2:contact_for', {'from_party': 'demo-p6', 'to_party': 'demo-o2', 'kind': 'contact_for'})
     for n, (name, unit, price) in enumerate(SERVICES.get(next((k for k in kinds if k in SERVICES), ''), GENERAL)[lg], 1):

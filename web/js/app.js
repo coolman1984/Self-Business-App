@@ -2,9 +2,9 @@
 import { h, mount, $ } from './core/dom.js';
 import { t } from './i18n/index.js';
 import { apply, getPrefs } from './core/prefs.js';
-import { refresh, session, onLogout } from './core/session.js';
+import { refresh as refreshSession, session, onLogout } from './core/session.js';
 import { onApi } from './core/api.js';
-import { route, start, go, dispatch } from './core/router.js';
+import { route, start, go, dispatch, refresh } from './core/router.js';
 import { buildShell, registerNav } from './shell/shell.js';
 import { loginView, setupView } from './views/auth.js';
 import { todayView } from './views/today.js';
@@ -32,7 +32,7 @@ apply();
 
 // core screens
 registerNav({ id: 'today', k: 'nav.today', ico: 'layout-dashboard', group: 'nav.g.main', path: '/', order: 1 });
-registerNav({ id: 'settings', k: 'nav.settings', ico: 'settings', group: 'nav.g.system', path: '/settings', order: 90, perm: ['settings.view', 'settings.edit'] });
+registerNav({ id: 'settings', k: 'nav.settings', ico: 'settings', group: 'nav.g.system', path: '/settings', order: 90 });
 registerNav({ id: 'help', k: 'nav.help', ico: 'circle-help', group: 'nav.g.system', path: '/help', order: 99 });
 registerNav({ id: 'inbox', k: 'nav.inbox', ico: 'inbox', group: 'nav.g.main', path: '/inbox', order: 2, perm: 'tasks.view' });
 registerNav({ id: 'clients', k: 'nav.clients', ico: 'users', group: 'nav.g.work', path: '/clients', order: 10, perm: 'clients.view' });
@@ -54,7 +54,7 @@ route('/tasks', tasksView, { nav: 'tasks', title: 'nav.tasks' });
 route('/calendar', calendarView, { nav: 'calendar', title: 'nav.calendar' });
 route('/services', servicesView, { nav: 'services', title: 'nav.services' });
 
-const afterAdd = () => dispatch();
+const afterAdd = () => refresh();
 registerQuickAdd({ k: 'client.new', ico: 'user-plus', perm: 'clients.create', run: () => partyDialog(null, (id) => go('/clients/' + encodeURIComponent(id))) });
 registerQuickAdd({ k: 'task.new', ico: 'square-check-big', perm: 'tasks.create', run: () => taskDialog(null, afterAdd) });
 registerQuickAdd({ k: 'appt.new', ico: 'calendar', perm: 'calendar.create', run: () => appointmentDialog(null, afterAdd) });
@@ -85,7 +85,7 @@ const root = $('#app');
 let shellBuilt = false;
 
 async function render() {
-  try { await refresh(); } catch (e) {
+  try { await refreshSession(); } catch (e) {
     mount(root, h('div', { style: { padding: '2rem', maxInlineSize: '36rem', margin: 'auto' } }, errorBox(e.message === 'offline' ? t('offline.banner') : e.message, render)));
     return;
   }

@@ -29,11 +29,22 @@ export const href = (path) => '#' + path;
 export const here = () => current;
 export const onRoute = (fn) => subs.push(fn);
 
-export function dispatch() {
+export function dispatch(refreshing = false) {
   current = resolve(location.hash);
-  subs.forEach((f) => f(current));
+  subs.forEach((f) => f(current, refreshing));
 }
+// show the same screen again with fresh data: no new history entry, the scroll position stays
+export const refresh = () => dispatch(true);
+let started = false;
 export function start() {
-  addEventListener('hashchange', dispatch);
-  dispatch();
+  if (!started) { started = true; addEventListener('hashchange', () => dispatch(false)); }
+  dispatch(false);
+}
+
+// remember a screen's small state (tab, day, filter) in the address WITHOUT a new history entry and without redrawing
+export function setQuery(values) {
+  const { path, query } = parse();
+  const q = new URLSearchParams({ ...query, ...values });
+  for (const [k, v] of [...q]) if (v === '' || v === 'undefined') q.delete(k);
+  history.replaceState(null, '', '#' + path + (q.toString() ? '?' + q : ''));
 }

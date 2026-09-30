@@ -8,7 +8,7 @@ import { card, tabs, segmented, field, input, button, pageHeader, chip } from '.
 import { toast, confirmBox } from '../ui/overlay.js';
 import { formDialog } from '../ui/form.js';
 import { META, queryAll, options, createRecord, updateRecord, softDelete } from '../core/domain.js';
-import { href, go } from '../core/router.js';
+import { href, go, setQuery } from '../core/router.js';
 import { loadDemo } from './today.js';
 import { here } from '../core/router.js';
 
@@ -75,7 +75,7 @@ function business() {
     try {
       await saveSettings('Business identity', { 'brand.name': name.value.trim(), 'brand.short': short.value.trim().slice(0, 3) });
       await refresh(); toast(t('toast.saved'));
-    } catch (err) { toast(err.message, { kind: 'bad' }); } finally { btn.classList.remove('busy'); }
+    } catch (err) { toast(friendly(err), { kind: 'bad' }); } finally { btn.classList.remove('busy'); }
   } }, h('h3', t('settings.business')), h('p', { class: 'muted' }, t('settings.business.d')),
   field(t('setup.name'), name), field(t('setup.short'), short, { hint: t('setup.short.hint') }), button(t('action.save'), { kind: 'primary', type: 'submit', ico: 'save' })));
 }
@@ -87,7 +87,7 @@ function account() {
     e.preventDefault(); fo.setError(''); fn.setError('');
     const btn = e.submitter; btn.classList.add('busy');
     try { await post('/api/auth/password', { old: old.value, new: nw.value }); old.value = ''; nw.value = ''; toast(t('toast.saved')); }
-    catch (err) { (err.status === 403 || /old|current/i.test(err.message) ? fo : fn).setError(err.message); } finally { btn.classList.remove('busy'); }
+    catch (err) { (err.status === 403 || /old|current/i.test(err.message) ? fo : fn).setError(friendly(err)); } finally { btn.classList.remove('busy'); }
   } }, h('h3', t('settings.account')), h('p', { class: 'muted' }, `${session.me.full_name || ''} · ${session.me.username}`), fo, fn,
   button(t('account.change'), { kind: 'primary', type: 'submit', ico: 'lock' })));
 }
@@ -120,7 +120,7 @@ function fieldsTab() {
     const defs = await queryAll('custom_field_defs', { sort: 'rowid' });
     const dialog = (row) => formDialog({
       title: row ? t('fields.edit') : t('fields.new'), values: row ? { ...row, options: (row.options || []).join('\n') } : { type: 'text', entity: 'parties' },
-      danger: row ? { label: t('action.delete'), run: async () => { await softDelete(t('fields.delete'), 'custom_field_defs', row); toast(t('toast.deleted')); paint(); } } : null,
+      danger: row ? { label: t('action.delete'), run: async () => { const undo = await softDelete(t('fields.delete'), 'custom_field_defs', row); paint(); toast(t('toast.deleted'), { undo: async () => { await undo(); toast(t('toast.restored')); paint(); } }); } } : null,
       fields: [
         { key: 'entity', label: t('fields.for'), type: 'select', options: options('cust', META.customizable), default: 'parties', required: true },
         { key: 'label_ar', label: t('fields.label_ar'), required: true }, { key: 'label_en', label: t('fields.label_en') },
@@ -156,7 +156,9 @@ export function settingsView() {
   const body = h('div', { style: { marginBlockStart: '1.2rem' } });
   const TABS = { look: appearance, business, data: dataTab, fields: fieldsTab, account, about };
   const show = (id) => { active = id; body.replaceChildren(TABS[id]()); };
-  const tb = tabs([{ id: 'look', label: t('settings.tab.look') }, { id: 'business', label: t('settings.tab.business') }, { id: 'data', label: t('settings.tab.data') }, { id: 'fields', label: t('settings.tab.fields') }, { id: 'account', label: t('settings.tab.account') }, { id: 'about', label: t('settings.tab.about') }], active, show);
-  show(TABS[active] ? active : 'look');
+  const shown = [['look', true], ['business', can('settings.edit')], ['data', can('data.import') || can('clients.view')], ['fields', can('settings.edit')], ['account', true], ['about', true]].filter(([, ok]) => ok).map(([id]) => id);
+  if (!shown.includes(active)) active = 'look';
+  const tb = tabs(shown.map((id) => ({ id, label: t('settings.tab.' + (id === 'look' ? 'look' : id)) })), active, (id) => { setQuery({ tab: id }); show(id); });
+  show(active);
   return h('div', pageHeader(t('nav.settings'), { sub: t('settings.sub') }), tb, body);
 }

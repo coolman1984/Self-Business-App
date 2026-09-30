@@ -20,6 +20,8 @@ export function setLang(l, root = document.documentElement) {
   if (changed) subs.forEach((f) => f(l));
 }
 
+export const hasKey = (key) => DICT[current][key] !== undefined || DICT.en[key] !== undefined;
+
 export function t(key, params) {
   let s = DICT[current][key];
   if (s === undefined) s = DICT.en[key];

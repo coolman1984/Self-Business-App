@@ -137,7 +137,7 @@ kbd { font-family: var(--font-mono); font-size: .78rem; padding: .05rem .4rem; b
 @keyframes drawer-in { from { transform: translateX(28px); opacity: 0; } to { transform: none; opacity: 1; } }
 [dir='rtl'] .drawer { animation-name: drawer-in-rtl; }
 @keyframes drawer-in-rtl { from { transform: translateX(-28px); opacity: 0; } to { transform: none; opacity: 1; } }
-.toasts { position: fixed; inset-block-end: 1.2rem; inset-inline-start: 50%; transform: translateX(-50%); z-index: 90; display: flex; flex-direction: column; gap: .5rem; align-items: center; pointer-events: none; }
+.toasts { position: fixed; inset-block-end: 1.2rem; left: 50%; transform: translateX(-50%); max-inline-size: 94vw; z-index: 90; display: flex; flex-direction: column; gap: .5rem; align-items: center; pointer-events: none; }
 .toast { pointer-events: auto; display: flex; align-items: center; gap: .8rem; background: var(--ink); color: var(--canvas); padding: .65rem 1rem; border-radius: var(--radius-s); box-shadow: var(--shadow-2); animation: rise var(--t-base) var(--ease); max-inline-size: min(34rem, 92vw); font-weight: 600; }
 .toast.bad { background: var(--bad); color: #fff; }
 .toast button { background: transparent; border: 0; color: inherit; text-decoration: underline; font-weight: 700; padding: .1rem .3rem; }
@@ -146,7 +146,7 @@ kbd { font-family: var(--font-mono); font-size: .78rem; padding: .05rem .4rem; b
 .menu button:hover, .menu button:focus-visible { background: var(--surface-2); }
 .menu hr { margin-block: .3rem; }
 [data-tip] { position: relative; }
-[data-tip]:hover::after, [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; inset-block-start: calc(100% + 6px); inset-inline-start: 50%; transform: translateX(-50%); background: var(--ink); color: var(--canvas); padding: .25rem .55rem; border-radius: 6px; font-size: .78rem; font-weight: 600; white-space: nowrap; z-index: 80; pointer-events: none; }
+[data-tip]:hover::after, [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; inset-block-start: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--canvas); padding: .25rem .55rem; border-radius: 6px; font-size: .78rem; font-weight: 600; white-space: nowrap; z-index: 80; pointer-events: none; }
 
 /* ---------- command palette ---------- */
 .palette { position: fixed; inset-block-start: 12vh; inset-inline: 0; margin-inline: auto; inline-size: min(40rem, 94vw); z-index: 65; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-l); box-shadow: var(--shadow-2); overflow: hidden; animation: rise var(--t-panel) var(--ease); }

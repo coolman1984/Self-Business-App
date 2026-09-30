@@ -24,7 +24,12 @@ class Launcher(unittest.TestCase):
 
     def test_falls_back_to_the_default_browser(self):
         opened = []
-        self.assertEqual(launcher.open_app('http://localhost:1/', True, popen=None, opener=opened.append), 'browser')
+        orig = launcher.app_browser
+        launcher.app_browser = lambda *a, **k: None          # no Edge / Chrome, whatever PC this test runs on
+        try:
+            self.assertEqual(launcher.open_app('http://localhost:1/', True, popen=None, opener=opened.append), 'browser')
+        finally:
+            launcher.app_browser = orig
         self.assertEqual(opened, ['http://localhost:1/'])
 
     def test_app_mode_off_uses_the_default_browser(self):

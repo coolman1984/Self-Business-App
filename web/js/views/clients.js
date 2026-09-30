@@ -3,36 +3,40 @@ import { h, icon, mount } from '../core/dom.js';
 import { t } from '../i18n/index.js';
 import { session, can } from '../core/session.js';
 import { get, post, api, uuid, commit, friendly } from '../core/api.js';
-import { here, go, href } from '../core/router.js';
+import { debounce } from '../core/dom.js';
+import { here, go, href, refresh, setQuery } from '../core/router.js';
 import { card, chip, button, emptyState, errorBox, pageHeader, skeleton, table, tabs, avatar, segmented } from '../ui/kit.js';
 import { menu, toast, confirmBox, modal } from '../ui/overlay.js';
 import { timelineView } from '../ui/timeline.js';
-import { date, dateTime, ago, money, initials } from '../core/format.js';
+import { date, dateTime, ago, money, initials, listSep } from '../core/format.js';
 import { matches, norm } from '../core/textnorm.js';
 import { META, queryAll, getRecord, updateRecord, createRecord, phoneShow, telHref, waHref, mailHref, enumText, opPut, opDel, dueState, isoDate, stripped } from '../core/domain.js';
 import { partyDialog, opportunityDialog, projectDialog, taskDialog, appointmentDialog, activityDialog, relationDialog, removeRecord } from './dialogs.js';
 import { formDialog } from '../ui/form.js';
 
+const listState = { q: '', role: 'all', kind: 'all', status: 'active' };
 const partyAvatar = (p, big) => h('span', { class: 'avatar' + (p.kind === 'org' ? ' org' : '') + (big ? ' lg' : ''), 'aria-hidden': 'true' }, p.kind === 'org' ? icon('building-2') : initials(p.name));
 
 // ---------------------------------------------------------------------------------------------- list
 export async function clientsView() {
   const [parties, roles] = await Promise.all([
-    queryAll('parties', { filters: [['status', 'ne', 'merged']], sort: 'name' }),
+    queryAll('parties', { sort: 'name' }),
     queryAll('party_roles', {}),
   ]);
   const rolesOf = {};
   roles.forEach((r) => (rolesOf[r.party_id] = rolesOf[r.party_id] || []).push(r.role));
-  const state = { q: '', role: 'all', kind: 'all', archived: false };
+  const state = listState;           // the search text and the filters survive a refresh of the list
+  const extra = new Set();           // clients found by the server search when the list is longer than what was loaded
   const body = h('div');
   const count = h('span', { class: 'muted' });
 
   function filtered() {
     return parties.filter((p) => {
-      if (!!(p.status === 'archived') !== state.archived) return false;
+      if ((p.status || 'active') !== state.status) return false;
       if (state.role !== 'all' && !(rolesOf[p.id] || []).includes(state.role)) return false;
       if (state.kind !== 'all' && p.kind !== state.kind) return false;
       if (!state.q) return true;
+      if (extra.has(p.id)) return true;
       const digits = norm(state.q).replace(/\D/g, '');
       return matches([p.name, p.name_en, p.legal_name, p.email, p.city, p.tags, p.phone, p.phone2].join(' '), state.q)
         || (digits.length >= 4 && [p.phone, p.phone2].some((x) => (x || '').replace(/\D/g, '').includes(digits.replace(/^0/, ''))));
@@ -51,17 +55,26 @@ export async function clientsView() {
         : emptyState({ ico: 'users', title: t('clients.empty.title'), text: t('clients.empty.text'), action: can('clients.create') ? button(t('client.new'), { kind: 'primary', ico: 'plus', onClick: newClient }) : null })));
   }
   const newClient = () => partyDialog(null, (id) => go('/clients/' + encodeURIComponent(id)));
-  const search = h('input', { class: 'input', type: 'search', placeholder: t('clients.search'), 'aria-label': t('clients.search'), onInput: (e) => { state.q = e.target.value; paint(); } });
+  const serverSearch = debounce(async () => {           // a very long list is not fully loaded: ask the server, which knows every client
+    if (!parties.truncated || state.q.trim().length < 2) return;
+    try {
+      const hits = await get('/api/search?e=parties&limit=50&q=' + encodeURIComponent(state.q), { quiet: true });
+      const missing = hits.map((x) => x.id).filter((id) => !parties.some((p) => p.id === id));
+      if (missing.length) { parties.push(...await queryAll('parties', { filters: [['id', 'in', missing]] })); missing.forEach((id) => extra.add(id)); paint(); }
+    } catch (e) { /* offline: the loaded part still filters */ }
+  }, 300);
+  const search = h('input', { class: 'input', type: 'search', value: state.q, placeholder: t('clients.search'), 'aria-label': t('clients.search'), onInput: (e) => { state.q = e.target.value; paint(); serverSearch(); } });
   const roleFilter = h('div', { class: 'filters', role: 'group', 'aria-label': t('f.role') }, ...[['all', t('filter.all')], ...META.roles.slice(0, 4).map((r) => [r, t('role.' + r)])].map(([id, label]) =>
     h('button', { type: 'button', 'aria-pressed': String(state.role === id), dataset: { v: id }, onClick: (e) => { state.role = id; [...roleFilter.children].forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === id))); paint(); } }, label)));
-  const kindSeg = segmented([['all', t('filter.all')], ['person', t('pkind.person')], ['org', t('pkind.org')]], 'all', (v) => { state.kind = v; paint(); });
-  const archBtn = button(t('filter.archived'), { small: true, kind: 'ghost', ico: 'folder', onClick: () => { state.archived = !state.archived; archBtn.classList.toggle('primary', state.archived); paint(); } });
+  const kindSeg = segmented([['all', t('filter.all')], ['person', t('pkind.person')], ['org', t('pkind.org')]], state.kind, (v) => { state.kind = v; paint(); });
+  const statusSeg = segmented([['active', t('partystatus.active')], ['archived', t('partystatus.archived')], ['merged', t('partystatus.merged')]], state.status, (v) => { state.status = v; paint(); });
   paint();
   return h('div', pageHeader(t('nav.clients'), { sub: t('clients.sub'), actions: [
     can('data.import') ? button(t('import.title'), { ico: 'upload', href: href('/import') }) : null,
     can('clients.view') ? button(t('dup.title'), { ico: 'copy', href: href('/duplicates') }) : null,
     can('clients.create') ? button(t('client.new'), { kind: 'primary', ico: 'plus', id: 'new-client', onClick: newClient }) : null] }),
-  card({ class: 'flush' }, h('div', { class: 'toolbar', style: { padding: '1rem 1rem 0' } }, h('div', { class: 'searchbox' }, icon('search'), search), roleFilter, kindSeg, archBtn, count), body));
+  card({ class: 'flush' }, h('div', { class: 'toolbar', style: { padding: '1rem 1rem 0' } }, h('div', { class: 'searchbox' }, icon('search'), search), roleFilter, kindSeg, statusSeg, count),
+    parties.truncated ? h('div', { class: 'banner info' }, icon('info'), h('span', t('list.truncated', { n: parties.length }))) : null, body));
 }
 
 // ---------------------------------------------------------------------------------------------- record page
@@ -69,17 +82,24 @@ const TAB_IDS = ['overview', 'timeline', 'work', 'notes', 'files'];
 
 export async function clientView({ params, query: q }) {
   const p = await getRecord('parties', params.id);
-  if (p.merged_into) { go('/clients/' + encodeURIComponent(p.merged_into)); return h('div'); }
-  const [roles, fields] = await Promise.all([queryAll('party_roles', { filters: [['party_id', 'eq', p.id]] }), can('clients.view') ? queryAll('custom_field_defs', { filters: [['entity', 'eq', 'parties']] }) : []]);
-  const reload = () => go(location.hash.slice(1).split('?')[0] + '?tab=' + active + '&r=' + Date.now());
-  let active = TAB_IDS.includes(q.tab) ? q.tab : 'overview';
+  const ids = await familyIds(p);        // this client and everything merged into it (also through several merges)
+  const [roles, fields, target] = await Promise.all([queryAll('party_roles', { filters: [['party_id', 'eq', p.id]] }), can('clients.view') ? queryAll('custom_field_defs', { filters: [['entity', 'eq', 'parties']] }) : [],
+    p.merged_into ? getRecord('parties', p.merged_into).catch(() => null) : null]);
+  const reload = () => refresh();
+  const TABS_SHOWN = TAB_IDS.filter((id) => (id !== 'notes' || can('notes.view')) && (id !== 'files' || can('files.download')));
+  let active = TABS_SHOWN.includes(q.tab) ? q.tab : 'overview';
   const body = h('div', { style: { marginBlockStart: '1.1rem' } });
-  const ctx = { p, roles, fields, reload };
+  const ctx = { p, ids, roles, fields, reload };
+  const unmerge = async () => { await updateRecord(t('merge.undo'), 'parties', p, { status: 'active', merged_into: undefined }); toast(t('toast.saved')); reload(); };
+  const banner = p.status === 'merged' ? h('div', { class: 'banner', role: 'status', style: { marginBlockEnd: '1rem', borderRadius: 'var(--radius-s)', border: '1px solid var(--warn)' } }, icon('copy'),
+    h('span', { class: 'grow' }, target ? t('merge.banner', { name: target.name }) : t('merge.banner.gone')),
+    target ? button(t('merge.open'), { small: true, ico: 'arrow-right', href: href('/clients/' + encodeURIComponent(target.id)) }) : null,
+    can('clients.edit') ? button(t('merge.unmerge'), { small: true, onClick: unmerge }) : null) : null;
 
   const more = (e) => menu(e.currentTarget, [
     can('clients.edit') ? { label: t('client.roles'), ico: 'tag', onClick: () => rolesDialog(p, roles, reload) } : null,
     can('clients.edit') ? { label: t('rel.new'), ico: 'link', onClick: () => relationDialog(p, reload) } : null,
-    can('clients.edit') ? { label: t('merge.title'), ico: 'copy', onClick: () => mergeDialog(p, roles) } : null,
+    can('clients.edit') && p.status !== 'merged' ? { label: t('merge.title'), ico: 'copy', onClick: () => mergeDialog(p, roles) } : null,
     can('clients.edit') ? { label: p.status === 'archived' ? t('client.unarchive') : t('client.archive'), ico: 'folder', onClick: async () => { await updateRecord(t('client.archive'), 'parties', p, { status: p.status === 'archived' ? 'active' : 'archived' }); toast(t('toast.saved')); reload(); } } : null,
     '-',
     can('clients.delete') ? { label: t('action.delete'), ico: 'trash-2', onClick: async () => { if (await removeRecord(t('client.delete'), 'parties', p, () => {})) go('/clients'); } } : null,
@@ -104,10 +124,24 @@ export async function clientView({ params, query: q }) {
     mount(body, skeleton(4));
     try { mount(body, h('div', { class: 'page-in' }, await TABS[id](ctx))); } catch (e) { mount(body, errorBox(friendly(e), () => show(id))); }
   };
-  const tb = h('div', { class: 'pill-tabs', role: 'tablist' }, ...TAB_IDS.map((id) => h('button', { role: 'tab', type: 'button', 'aria-selected': String(id === active), dataset: { id }, onClick: () => { [...tb.children].forEach((b) => b.setAttribute('aria-selected', String(b.dataset.id === id))); show(id); } }, t('tab.' + id))));
+  const tb = h('div', { class: 'pill-tabs', role: 'tablist' }, ...TABS_SHOWN.map((id) => h('button', { role: 'tab', type: 'button', 'aria-selected': String(id === active), dataset: { id }, onClick: () => { [...tb.children].forEach((b) => b.setAttribute('aria-selected', String(b.dataset.id === id))); setQuery({ tab: id }); show(id); } }, t('tab.' + id))));
   show(active);
-  return h('div', head, tb, body);
+  return h('div', banner, head, tb, body);
 }
+
+// this client plus every record merged into it, through any number of merges
+async function familyIds(p) {
+  const ids = [p.id];
+  let frontier = [p.id];
+  for (let depth = 0; depth < 6 && frontier.length; depth++) {
+    const kids = await queryAll('parties', { filters: [['merged_into', 'in', frontier]] });
+    frontier = kids.map((k) => k.id).filter((id) => !ids.includes(id));
+    ids.push(...frontier);
+  }
+  return ids;
+}
+
+const cvText = (v) => (!v ? '' : v.text_v ? v.text_v : v.num_v !== undefined && v.num_v !== null ? String(v.num_v) : v.date_v ? date(v.date_v) : '');
 
 function kv(pairs) {
   const rows = pairs.filter(([, v]) => v !== undefined && v !== null && v !== '' && v !== false);
@@ -115,28 +149,28 @@ function kv(pairs) {
 }
 
 // ---- overview: contact data, extra fields, relations, what comes next
-async function overview({ p, fields, reload }) {
+async function overview({ p, ids, fields, reload }) {
   const [rels, tasks, appts, values] = await Promise.all([
-    Promise.all([queryAll('party_relations', { filters: [['from_party', 'eq', p.id]] }), queryAll('party_relations', { filters: [['to_party', 'eq', p.id]] })]).then(([a, b]) => [...a.map((r) => ({ ...r, other: r.to_party })), ...b.map((r) => ({ ...r, other: r.from_party }))]),
-    can('tasks.view') ? queryAll('tasks', { filters: [['party_id', 'eq', p.id], ['status', 'in', META.taskStatus.slice(0, 3)]], sort: 'due' }) : [],
-    can('calendar.view') ? queryAll('appointments', { filters: [['party_id', 'eq', p.id], ['status', 'eq', 'scheduled'], ['starts_at', 'gte', isoDate()]], sort: 'starts_at' }) : [],
+    Promise.all([queryAll('party_relations', { filters: [['from_party', 'in', ids]] }), queryAll('party_relations', { filters: [['to_party', 'in', ids]] })]).then(([a, b]) => [...a.map((r) => ({ ...r, other: r.to_party })), ...b.map((r) => ({ ...r, other: r.from_party }))]),
+    can('tasks.view') ? queryAll('tasks', { filters: [['party_id', 'in', ids], ['status', 'in', META.taskStatus.slice(0, 3)]], sort: 'due' }) : [],
+    can('calendar.view') ? queryAll('appointments', { filters: [['party_id', 'in', ids], ['status', 'eq', 'scheduled'], ['starts_at', 'gte', isoDate()]], sort: 'starts_at' }) : [],
     fields.length ? queryAll('custom_values', { filters: [['record_id', 'eq', p.id]] }) : [],
   ]);
   const others = rels.length ? await queryAll('parties', { filters: [['id', 'in', [...new Set(rels.map((r) => r.other))]]] }) : [];
   const byId = Object.fromEntries(others.map((o) => [o.id, o]));
   const cv = Object.fromEntries(values.map((v) => [v.key, v]));
-  const pinned = can('notes.view') ? (await queryAll('notes', { filters: [['party_id', 'eq', p.id], ['pinned', 'eq', 1]] })) : [];
+  const pinned = can('notes.view') ? (await queryAll('notes', { filters: [['party_id', 'in', ids], ['pinned', 'eq', 1]] })) : [];
   const ar = document.documentElement.lang === 'ar';
-  const ext = fields.sort((a, b) => (a.order || 0) - (b.order || 0)).map((f) => [ar ? f.label_ar || f.label_en : f.label_en || f.label_ar, (cv[f.key] || {}).text_v || (cv[f.key] || {}).num_v || ((cv[f.key] || {}).date_v ? date(cv[f.key].date_v) : '')]);
+  const ext = fields.sort((a, b) => (a.order || 0) - (b.order || 0)).map((f) => [ar ? f.label_ar || f.label_en : f.label_en || f.label_ar, cvText(cv[f.key])]);
   return h('div', { class: 'grid-main' },
     h('div', { class: 'stack-lg' },
       card({}, h('div', { class: 'card-head' }, h('h2', t('client.contact'))), kv([
         [t('f.phone'), p.phone && h('a', { class: 'ltr', href: telHref(p.phone) }, phoneShow(p.phone))], [t('f.phone2'), p.phone2 && h('a', { class: 'ltr', href: telHref(p.phone2) }, phoneShow(p.phone2))],
-        [t('f.email'), p.email && h('a', { class: 'ltr', href: mailHref(p.email) }, p.email)], [t('f.address'), [p.address, p.city].filter(Boolean).join('، ')],
+        [t('f.email'), p.email && h('a', { class: 'ltr', href: mailHref(p.email) }, p.email)], [t('f.address'), [p.address, p.city].filter(Boolean).join(listSep())],
         [t('f.website'), p.website && h('a', { class: 'ltr', href: /^https?:/.test(p.website) ? p.website : 'https://' + p.website, target: '_blank', rel: 'noopener noreferrer' }, p.website)],
         [t('f.tax_id'), p.tax_id], [t('f.birthday'), p.birthday && date(p.birthday)], [t('f.national_id'), p.national_id], [t('f.source'), p.source && enumText('parties', 'source', p.source)],
         [t('f.added'), `${date(p._created)} · ${p._created_by || ''}`]])),
-      ext.some(([, v]) => v) ? card({}, h('div', { class: 'card-head' }, h('h2', t('client.extra')), can('clients.edit') ? button(t('action.edit'), { small: true, ico: 'pencil', onClick: () => customValuesDialog(p, fields, cv, reload) }) : null), kv(ext)) : (fields.length && can('clients.edit') ? button(t('client.extra.fill'), { ico: 'plus', onClick: () => customValuesDialog(p, fields, cv, reload) }) : null),
+      ext.some(([, v]) => v !== '') ? card({}, h('div', { class: 'card-head' }, h('h2', t('client.extra')), can('clients.edit') ? button(t('action.edit'), { small: true, ico: 'pencil', onClick: () => customValuesDialog(p, fields, cv, reload) }) : null), kv(ext)) : (fields.length && can('clients.edit') ? button(t('client.extra.fill'), { ico: 'plus', onClick: () => customValuesDialog(p, fields, cv, reload) }) : null),
       rels.length ? card({}, h('div', { class: 'card-head' }, h('h2', t('client.relations'))), ...rels.map((r) => h('div', { class: 'list-item' }, partyAvatar(byId[r.other] || { name: '?' }), h('div', { class: 'grow' }, h('a', { href: href('/clients/' + encodeURIComponent(r.other)) }, (byId[r.other] || {}).name || '…'), h('div', { class: 'muted small' }, [t('rel.' + r.kind), r.title].filter(Boolean).join(' · '))),
         can('clients.edit') ? button('', { kind: 'ghost small', ico: 'x', title: t('action.remove'), onClick: async () => { await commit(t('rel.remove'), [opDel('party_relations', r.id, r.ver)]); reload(); } }) : null))) : null),
     h('div', { class: 'stack-lg' },
@@ -173,28 +207,28 @@ async function timeline({ p }) {
 }
 
 // ---- work: opportunities, projects, tasks, appointments, follow-ups
-async function work({ p, reload }) {
+async function work({ p, ids, reload }) {
   const [opps, projs, tasks, appts, acts] = await Promise.all(['opportunities', 'projects', 'tasks', 'appointments', 'activities'].map((e, i) =>
-    can(['sales', 'projects', 'tasks', 'calendar', 'notes'][i] + '.view') ? queryAll(e, { filters: [['party_id', 'eq', p.id]], sort: ['stage', 'status', 'due', 'starts_at', 'at'][i], desc: i > 2 }) : []));
+    can(['sales', 'projects', 'tasks', 'calendar', 'notes'][i] + '.view') ? queryAll(e, { filters: [['party_id', 'in', ids]], sort: ['stage', 'status', 'due', 'starts_at', 'at'][i], desc: i > 2 }) : []));
   const section = (title, ico, items, render, add) => card({}, h('div', { class: 'card-head' }, h('h2', title), add || null),
     items.length ? h('div', ...items.map(render)) : h('p', { class: 'muted' }, t('state.empty')));
   return h('div', { class: 'grid-2' },
-    section(t('nav.sales'), 'target', opps, (o) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); opportunityDialog(o, reload); } }, chip(t('stage.' + o.stage), o.stage === 'won' ? 'ok' : o.stage === 'lost' ? 'bad' : 'info'), h('span', { class: 'grow' }, o.title), o.value_minor != null ? h('span', { class: 'num small' }, money(o.value_minor)) : null),
+    section(t('nav.sales'), 'target', opps, (o) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); can('sales.edit') && opportunityDialog(o, reload); } }, chip(t('stage.' + o.stage), o.stage === 'won' ? 'ok' : o.stage === 'lost' ? 'bad' : 'info'), h('span', { class: 'grow' }, o.title), o.value_minor != null ? h('span', { class: 'num small' }, money(o.value_minor)) : null),
       can('sales.create') ? button('', { small: true, ico: 'plus', title: t('opp.new'), onClick: () => opportunityDialog(null, reload, { party_id: p.id }) }) : null),
     section(t('nav.projects'), 'briefcase', projs, (o) => h('a', { class: 'list-item', href: href('/projects/' + encodeURIComponent(o.id)) }, chip(t('pstatus.' + o.status), o.status === 'done' ? 'ok' : o.status === 'active' ? 'info' : ''), h('span', { class: 'grow' }, o.title), o.due ? h('span', { class: 'small muted' }, date(o.due)) : null),
       can('projects.create') ? button('', { small: true, ico: 'plus', title: t('project.new'), onClick: () => projectDialog(null, reload, { party_id: p.id }) }) : null),
-    section(t('nav.tasks'), 'square-check-big', tasks, (o) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); taskDialog(o, reload); } }, chip(t('tstatus.' + o.status), o.status === 'done' ? 'ok' : ''), h('span', { class: 'grow' + (o.status === 'done' ? ' done-text' : '') }, o.title), o.due ? h('span', { class: 'small due-' + dueState(o.due) }, date(o.due)) : null),
+    section(t('nav.tasks'), 'square-check-big', tasks, (o) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); can('tasks.edit') && taskDialog(o, reload); } }, chip(t('tstatus.' + o.status), o.status === 'done' ? 'ok' : ''), h('span', { class: 'grow' + (o.status === 'done' ? ' done-text' : '') }, o.title), o.due ? h('span', { class: 'small due-' + dueState(o.due) }, date(o.due)) : null),
       can('tasks.create') ? button('', { small: true, ico: 'plus', title: t('task.new'), onClick: () => taskDialog(null, reload, { party_id: p.id }) }) : null),
-    section(t('nav.calendar'), 'calendar', appts, (o) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); appointmentDialog(o, reload); } }, icon('calendar'), h('span', { class: 'grow' }, o.title), h('span', { class: 'small muted' }, dateTime(o.starts_at))),
+    section(t('nav.calendar'), 'calendar', appts, (o) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); can('calendar.edit') && appointmentDialog(o, reload); } }, icon('calendar'), h('span', { class: 'grow' }, o.title), h('span', { class: 'small muted' }, dateTime(o.starts_at))),
       can('calendar.create') ? button('', { small: true, ico: 'plus', title: t('appt.new'), onClick: () => appointmentDialog(null, reload, { party_id: p.id }) }) : null),
-    section(t('client.followups'), 'phone', acts, (o) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); activityDialog(o, reload); } }, chip(t('actkind.' + o.kind)), h('span', { class: 'grow' }, o.summary), h('span', { class: 'small muted' }, date(o.at))),
+    section(t('client.followups'), 'phone', acts, (o) => h('a', { class: 'list-item', href: '#', onClick: (e) => { e.preventDefault(); can('notes.edit') && activityDialog(o, reload); } }, chip(t('actkind.' + o.kind)), h('span', { class: 'grow' }, o.summary), h('span', { class: 'small muted' }, date(o.at))),
       can('notes.create') ? button('', { small: true, ico: 'plus', title: t('act.new'), onClick: () => activityDialog(null, reload, { party_id: p.id }) }) : null));
 }
 
 // ---- notes
-async function notes({ p, reload }) {
+async function notes({ p, ids, reload }) {
   if (!can('notes.view')) return card({}, h('p', { class: 'muted' }, t('err.forbidden')));
-  const list = (await queryAll('notes', { filters: [['party_id', 'eq', p.id]], sort: 'rowid', desc: true })).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  const list = (await queryAll('notes', { filters: [['party_id', 'in', ids]], sort: 'rowid', desc: true })).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
   const box = h('textarea', { class: 'textarea', rows: 2, placeholder: t('notes.placeholder'), 'aria-label': t('notes.placeholder') });
   const add = async () => {
     if (!box.value.trim()) return;
@@ -207,14 +241,14 @@ async function notes({ p, reload }) {
     list.length ? card({}, ...list.map((n) => h('div', { class: 'list-item', style: { alignItems: 'flex-start' } }, icon(n.pinned ? 'star' : 'notebook-pen'),
       h('div', { class: 'grow' }, h('p', { style: { whiteSpace: 'pre-wrap' } }, n.body), h('div', { class: 'muted small' }, `${n._created_by || ''} · ${ago(n._created)}`)),
       can('notes.edit') ? button('', { kind: 'ghost small', ico: 'star', title: n.pinned ? t('notes.unpin') : t('notes.pin'), onClick: async () => { await updateRecord(t('notes.pin'), 'notes', n, { pinned: !n.pinned }); reload(); } }) : null,
-      can('notes.remove') ? button('', { kind: 'ghost small', ico: 'trash-2', title: t('action.delete'), onClick: () => removeRecord(t('notes.delete'), 'notes', n, reload) }) : null)))
+      can('notes.delete') ? button('', { kind: 'ghost small', ico: 'trash-2', title: t('action.delete'), onClick: () => removeRecord(t('notes.remove'), 'notes', n, reload) }) : null)))
       : emptyState({ ico: 'notebook-pen', title: t('notes.empty.title'), text: t('notes.empty.text') }));
 }
 
 // ---- files
-async function files({ p, reload }) {
+async function files({ p, ids, reload }) {
   if (!can('files.download')) return card({}, h('p', { class: 'muted' }, t('err.forbidden')));
-  const list = await queryAll('attachments', { filters: [['party_id', 'eq', p.id]], sort: 'rowid', desc: true });
+  const list = await queryAll('attachments', { filters: [['party_id', 'in', ids]], sort: 'rowid', desc: true });
   const input = h('input', { type: 'file', hidden: true, onChange: async (e) => {
     for (const f of e.target.files) {
       try {
@@ -243,7 +277,7 @@ function rolesDialog(p, roles, reload) {
       const ops = [];
       for (const [r, cb] of checks) {
         const cur = roles.find((x) => x.role === r);
-        if (cb.checked && !cur) ops.push(opPut('party_roles', `${p.id}:${r}`, { party_id: p.id, role: r, since: isoDate() }));
+        if (cb.checked && !cur) ops.push(opPut('party_roles', `${p.id}:${r}`, { party_id: p.id, role: r }));
         if (!cb.checked && cur) ops.push(opDel('party_roles', cur.id, cur.ver));
       }
       if (ops.length) await commit(t('client.roles'), ops);
@@ -257,10 +291,15 @@ function mergeDialog(p, roles) {
       if (v.target === p.id) throw new Error(t('merge.same'));
       const target = await getRecord('parties', v.target);
       const trole = new Set((await queryAll('party_roles', { filters: [['party_id', 'eq', target.id]] })).map((r) => r.role));
-      const ops = [opPut('parties', p.id, { ...stripped(p), status: 'merged', merged_into: target.id }, p.ver),
-        ...roles.filter((r) => !trole.has(r.role)).map((r) => opPut('party_roles', `${target.id}:${r.role}`, { party_id: target.id, role: r.role, since: r.since }))];
+      const before = stripped(p);
+      const ops = [opPut('parties', p.id, { ...before, status: 'merged', merged_into: target.id }, p.ver),
+        ...roles.filter((r) => !trole.has(r.role)).map((r) => opPut('party_roles', `${target.id}:${r.role}`, { party_id: target.id, role: r.role }))];
       await commit(t('merge.title'), ops);
-      toast(t('merge.done', { name: target.name }));
+      toast(t('merge.done', { name: target.name }), { undo: async () => {         // Undo = write the record back as it was (the roles copied to the other client are harmless)
+        const cur = await getRecord('parties', p.id);
+        await commit(t('merge.undo'), [opPut('parties', p.id, before, cur.ver)]);
+        toast(t('toast.restored')); go('/clients/' + encodeURIComponent(p.id));
+      } });
       go('/clients/' + encodeURIComponent(target.id));
     } });
 }
